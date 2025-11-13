@@ -231,3 +231,83 @@ exports.getEmployeeProjects = async (req, res, next) => {
     next(err);
   }
 };
+
+exports.getProjectTimesheets = async (req, res, next) => {
+  try {
+    const projectId = req.params.projectId;
+    
+    console.log(`Fetching timesheets for project ${projectId}`);
+    
+    // Get all timesheet entries for this project
+    const result = await db.query(
+      `
+      SELECT 
+        te.*,
+        ts.week_start_date,
+        ts.status as timesheet_status,
+        ts.user_id,
+        ua.name as user_name,
+        ua.email,
+        t.title as task_title,
+        p.name as project_name
+      FROM timesheet_entry te
+      JOIN timesheet ts ON ts.id = te.timesheet_id
+      JOIN user_account ua ON ua.id = ts.user_id
+      JOIN project p ON p.id = te.project_id
+      LEFT JOIN task t ON t.id = te.task_id
+      WHERE te.project_id = $1
+      ORDER BY ts.week_start_date DESC, te.work_date DESC, ua.name
+      `,
+      [projectId]
+    );
+    
+    console.log(`Found ${result.rows.length} timesheet entries for project ${projectId}`);
+    
+    if (result.rows.length === 0) {
+      console.log('No timesheet entries found for project');
+      return res.json([]);
+    }
+    
+    // Group by week and user
+    const groupedData = result.rows.reduce((acc, entry) => {
+      const weekKey = entry.week_start_date;
+      const userKey = entry.user_id;
+      
+      if (!acc[weekKey]) {
+        acc[weekKey] = {
+          week_start_date: weekKey,
+          total_hours: 0,
+          users: {}
+        };
+      }
+      
+      if (!acc[weekKey].users[userKey]) {
+        acc[weekKey].users[userKey] = {
+          user_id: entry.user_id,
+          user_name: entry.user_name,
+          email: entry.email,
+          total_hours: 0,
+          entries: []
+        };
+      }
+      
+      acc[weekKey].users[userKey].entries.push(entry);
+      acc[weekKey].users[userKey].total_hours += parseFloat(entry.hours) || 0;
+      acc[weekKey].total_hours += parseFloat(entry.hours) || 0;
+      
+      return acc;
+    }, {});
+    
+    // Convert to array format
+    const weeks = Object.values(groupedData).map(week => ({
+      ...week,
+      users: Object.values(week.users)
+    }));
+    
+    console.log(`Returning ${weeks.length} weeks of data`);
+    res.json(weeks);
+  } catch (err) {
+    console.error('Error fetching project timesheets:', err);
+    next(err);
+  }
+};

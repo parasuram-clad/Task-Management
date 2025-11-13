@@ -62,6 +62,8 @@ export interface TimesheetEntry {
   task_title?: string; // Ensure this is included
 }
 
+// Update the Timesheet interface in api.ts
+// In api.ts - Update the Timesheet interface
 export interface Timesheet {
   id?: number;
   user_id: number;
@@ -70,8 +72,16 @@ export interface Timesheet {
   submitted_at?: string;
   approved_at?: string;
   approved_by?: number;
+  rejected_at?: string;
+  rejected_by?: number;
+  rejection_reason?: string; // Add this for rejection comments
   entries: TimesheetEntry[];
-  total_hours?: number; // Add this if it's returned from backend
+  total_hours?: number;
+  // Add these for display purposes
+  approver_name?: string;
+  rejector_name?: string;
+  user_name?: string; // Add employee name
+  email?: string; // Add employee email
 }
 // In api.ts - Update the Project interface
 // In api.ts - Update the Project interface
@@ -193,6 +203,19 @@ export interface Task {
   project_name?: string;
   assignee_name?: string;
 }
+
+export interface WeeklyTimesheet {
+  week_start_date: string;
+  total_hours: number;
+  users: Array<{
+    user_id: number;
+    user_name: string;
+    email: string;
+    total_hours: number;
+    entries: TimesheetEntry[];
+  }>;
+}
+
 // Auth API
 export const authApi = {
   login: (data: LoginRequest) =>
@@ -265,7 +288,6 @@ export const timesheetApi = {
   getTimeLogsByTask: (taskId: number) =>
     apiClient.get<TimesheetEntry[]>(`/timesheets/task/${taskId}/logs`),
 
-  // Add delete method
   deleteEntry: (entryId: string) =>
     apiClient.delete(`/timesheets/entry/${entryId}`),
 
@@ -293,8 +315,32 @@ export const timesheetApi = {
   submit: (data: { weekStartDate: string }) =>
     apiClient.post<Timesheet>('/timesheets/me/submit', data),
 
-   getEmployeeTimesheets: (employeeId: number) =>
+  getEmployeeTimesheets: (employeeId: number) =>
     apiClient.get<Timesheet[]>(`/timesheets/employee/${employeeId}`),
+
+  // NEW METHODS FOR PROJECT AND TASK FILTERING
+  getMyProjects: () =>
+    apiClient.get<Project[]>('/timesheets/me/projects'),
+
+  getMyTasksForProject: (projectId: number) =>
+    apiClient.get<Task[]>(`/timesheets/me/projects/${projectId}/tasks`),
+
+  getMyEntriesForDate: (date: string) =>
+    apiClient.get<TimesheetEntry[]>(`/timesheets/me/entries/date/${date}`),
+
+
+   getTimesheetsForApproval: () =>
+    apiClient.get<Timesheet[]>('/timesheets/approvals'),
+
+// In api.ts - Update the reviewTimesheet function
+reviewTimesheet: (timesheetId: number, action: 'approve' | 'reject', comment?: string) => {
+  const requestData: any = { action };
+  if (comment && action === 'reject') {
+    requestData.comment = comment;
+  }
+  
+  return apiClient.post<Timesheet>(`/timesheets/${timesheetId}/decision`, requestData);
+},
 };
 
 // Add to projectApi
@@ -303,7 +349,25 @@ export const projectApi = {
   list: () => apiClient.get<Project[]>('/projects'),
   get: (id: number) => apiClient.get<Project>(`/projects/${id}`),
   create: (projectData: any) => apiClient.post('/projects', projectData),
-  update: (id: number, projectData: any) => apiClient.put(`/projects/${id}`, projectData),
+   update: (id: number, projectData: any) => {
+    // Transform the data to ensure proper format
+    const requestData = {
+      name: projectData.name,
+      description: projectData.description || undefined,
+      clientName: projectData.clientName || projectData.client || undefined,
+      managerId: projectData.managerId,
+      startDate: projectData.startDate.includes('T') 
+        ? projectData.startDate.split('T')[0] 
+        : projectData.startDate,
+      endDate: projectData.endDate.includes('T') 
+        ? projectData.endDate.split('T')[0] 
+        : projectData.endDate,
+      status: projectData.status,
+    };
+    
+    console.log('Updating project with data:', requestData);
+    return apiClient.put<Project>(`/projects/${id}`, requestData);
+  },
   delete: (id: number) => apiClient.delete(`/projects/${id}`),
   addMemberToProject: (projectId: number, data: { userId: number; roleLabel: string }) =>
     apiClient.post(`/projects/${projectId}/members`, data),
@@ -317,6 +381,18 @@ export const projectApi = {
 
     removeMemberFromProject: (projectId: number, memberId: string) =>
     apiClient.delete(`/projects/${projectId}/members/${memberId}`),
+  getProjectTimesheets: (projectId: number) => {
+    console.log(`API: Fetching timesheets for project ${projectId}`);
+    return apiClient.get<WeeklyTimesheet[]>(`/projects/${projectId}/timesheets`)
+      .then(data => {
+        console.log(`API: Received ${data.length} weeks of timesheet data`);
+        return data;
+      })
+      .catch(error => {
+        console.error('API: Error fetching project timesheets:', error);
+        throw error;
+      });
+  },
 };
 
 // Helper function to format date to YYYY-MM-DD
@@ -391,16 +467,29 @@ export const employeeApi = {
 };
 
 // Reports API
+// Add to reportsApi object
+// Update the reportsApi object
+// Add to reportsApi object
 export const reportsApi = {
-  attendance: (params?: {
-    userId?: number;
+  attendanceReport: (params?: {
     startDate?: string;
     endDate?: string;
+    roles?: string | string[];
+    department?: string;
   }) => apiClient.get<any[]>('/reports/attendance', params),
 
-  timesheets: (params?: {
-    userId?: number;
+  weeklyAttendanceReport: (params?: {
     startDate?: string;
     endDate?: string;
-  }) => apiClient.get<any[]>('/reports/timesheets', params),
+    roles?: string | string[];
+  }) => apiClient.get<any[]>('/reports/weekly-attendance', params),
+
+  timesheetReport: (params?: {
+    startDate?: string;
+    endDate?: string;
+    projectId?: string;
+  }) => apiClient.get<{
+    byEmployee: any[];
+    byProject: any[];
+  }>('/reports/timesheets', params),
 };

@@ -49,7 +49,6 @@ interface WeeklyEmployeeData {
   employeeId: string;
   employeeName: string;
   department: string;
-  role: string;
   dailyAttendance: DailyAttendance[];
   totalHours: number;
   presentDays: number;
@@ -144,41 +143,14 @@ const getWeekDays = (startDate: string) => {
   for (let i = 0; i < 7; i++) {
     const date = new Date(start);
     date.setDate(start.getDate() + i);
-    const formattedDate = `${date.getDate().toString().padStart(2, '0')}/${(date.getMonth() + 1).toString().padStart(2, '0')}/${date.getFullYear()}`;
-    
     days.push({
       date: date.toISOString().split('T')[0],
       day: date.toLocaleDateString('en-US', { weekday: 'short' }),
-      fullDate: formattedDate
+      fullDate: date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
     });
   }
   
   return days;
-};
-
-// Helper function to get all weeks in a month
-const getWeeksInMonth = (year: number, month: number) => {
-  const weeks = [];
-  const firstDay = new Date(year, month, 1);
-  const lastDay = new Date(year, month + 1, 0);
-  
-  let currentDate = new Date(firstDay);
-  
-  while (currentDate <= lastDay) {
-    const weekDates = getWeekDates(new Date(currentDate));
-    
-    // Only include weeks that have at least one day in the current month
-    if (new Date(weekDates.endDate).getMonth() === month || new Date(weekDates.startDate).getMonth() === month) {
-      weeks.push({
-        value: weekDates.startDate,
-        label: `Week ${weekDates.weekNumber} (${new Date(weekDates.startDate).toLocaleDateString()} - ${new Date(weekDates.endDate).toLocaleDateString()})`
-      });
-    }
-    
-    currentDate.setDate(currentDate.getDate() + 7);
-  }
-  
-  return weeks;
 };
 
 // Helper function to capitalize first letter
@@ -196,25 +168,61 @@ const formatTime = (timeString: string) => {
   });
 };
 
-// Helper function to export to Excel
-const exportToExcel = (data: any[], filename: string) => {
-  if (data.length === 0) {
-    toast.error('No data to export');
-    return;
-  }
+// Helper function to check if time is late (after 9:00 AM)
+const isLateArrival = (checkInTime: string) => {
+  if (!checkInTime) return false;
+  const checkIn = new Date(checkInTime);
+  const lateTime = new Date(checkIn);
+  lateTime.setHours(9, 0, 0, 0); // 9:00 AM
+  return checkIn > lateTime;
+};
 
-  const headers = Array.from(new Set(data.flatMap(row => Object.keys(row))));
+// Helper function to check if checkout is early (less than 8 hours)
+const isEarlyCheckout = (checkInTime: string, checkOutTime: string) => {
+  if (!checkInTime || !checkOutTime) return false;
+  const checkIn = new Date(checkInTime);
+  const checkOut = new Date(checkOutTime);
+  const hoursWorked = (checkOut.getTime() - checkIn.getTime()) / (1000 * 60 * 60);
+  return hoursWorked < 8; // Less than 8 hours
+};
+
+// Helper function to check if checkin is early (before 9:00 AM)
+const isEarlyCheckin = (checkInTime: string) => {
+  if (!checkInTime) return false;
+  const checkIn = new Date(checkInTime);
+  const earlyTime = new Date(checkIn);
+  earlyTime.setHours(9, 0, 0, 0); // 9:00 AM
+  return checkIn < earlyTime;
+};
+
+// Helper function to check if checkout is late (after 6:00 PM)
+const isLateCheckout = (checkOutTime: string) => {
+  if (!checkOutTime) return false;
+  const checkOut = new Date(checkOutTime);
+  const lateTime = new Date(checkOut);
+  lateTime.setHours(18, 0, 0, 0); // 6:00 PM
+  return checkOut > lateTime;
+};
+
+// Helper function to export to Excel
+const exportToExcel = (data: ReportData[], startDate: string, endDate: string, activeTab: string) => {
+  const headers = ['Employee ID', 'Employee Name', 'Department', 'Role', 'Location', 'Days Present', 'Days Absent', 'Leaves', 'Late Arrivals', 'Early Checkouts', 'Total Hours'];
   
   const csvContent = [
     headers.join(','),
-    ...data.map(row => 
-      headers.map(header => {
-        const value = row[header];
-        if (value === null || value === undefined) return '""';
-        if (typeof value === 'object') return `"${JSON.stringify(value).replace(/"/g, '""')}"`;
-        return `"${String(value).replace(/"/g, '""')}"`;
-      }).join(',')
-    )
+    ...data.map(row => [
+      `"${row.employeeId}"`,
+      `"${row.employeeName}"`,
+      `"${row.department}"`,
+      `"${capitalizeFirstLetter(row.role)}"`,
+      `"${row.location}"`,
+      row.daysPresent,
+      row.daysAbsent,
+      row.leaves,
+      row.lateArrivals,
+      row.earlyCheckouts,
+      row.totalHours.toFixed(1)
+    ].join(','))
   ].join('\n');
 
   const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
@@ -222,57 +230,40 @@ const exportToExcel = (data: any[], filename: string) => {
   const url = URL.createObjectURL(blob);
   
   link.setAttribute('href', url);
-  link.setAttribute('download', `${filename}.csv`);
+  link.setAttribute('download', `attendance-report-${activeTab}-${startDate}-to-${endDate}.csv`);
   link.style.visibility = 'hidden';
   
   document.body.appendChild(link);
   link.click();
   document.body.removeChild(link);
-  URL.revokeObjectURL(url);
 };
 
 export function AttendanceReport({ user }: AttendanceReportProps) {
   const currentWeek = getCurrentWeekDates();
-  const currentDate = new Date();
   const [activeTab, setActiveTab] = useState('weekly');
   const [startDate, setStartDate] = useState(currentWeek.startDate);
   const [endDate, setEndDate] = useState(currentWeek.endDate);
-  const [selectedDate, setSelectedDate] = useState(currentDate.toISOString().split('T')[0]);
-  const [selectedMonth, setSelectedMonth] = useState(currentDate.getMonth());
-  const [selectedYear, setSelectedYear] = useState(currentDate.getFullYear());
-  const [selectedWeek, setSelectedWeek] = useState(currentWeek.startDate);
-  const [roleFilter, setRoleFilter] = useState<string>('all');
+  const [selectedDate, setSelectedDate] = useState(new Date().toISOString().split('T')[0]);
+  const [selectedMonth, setSelectedMonth] = useState(new Date().getMonth());
+  const [selectedYear, setSelectedYear] = useState(new Date().getFullYear());
+  const [roleFilter, setRoleFilter] = useState<string[]>(['all']);
+  const [departmentFilter, setDepartmentFilter] = useState('all');
   const [isLoading, setIsLoading] = useState(false);
   const [reportData, setReportData] = useState<ReportData[]>([]);
   const [weeklyData, setWeeklyData] = useState<WeeklyEmployeeData[]>([]);
   const [monthlyData, setMonthlyData] = useState<MonthlyWeekData[]>([]);
   const [dateBasedData, setDateBasedData] = useState<WeeklyEmployeeData[]>([]);
+  const [teamAttendance, setTeamAttendance] = useState<any[]>([]);
   const [expandedDates, setExpandedDates] = useState<Set<string>>(new Set());
   const [expandedWeeks, setExpandedWeeks] = useState<Set<string>>(new Set());
 
-  const roles = ['all', 'employee', 'manager', 'hr', 'admin', 'finance'];
-  const months = [
-    { value: 0, label: 'January' },
-    { value: 1, label: 'February' },
-    { value: 2, label: 'March' },
-    { value: 3, label: 'April' },
-    { value: 4, label: 'May' },
-    { value: 5, label: 'June' },
-    { value: 6, label: 'July' },
-    { value: 7, label: 'August' },
-    { value: 8, label: 'September' },
-    { value: 9, label: 'October' },
-    { value: 10, label: 'November' },
-    { value: 11, label: 'December' }
-  ];
-  
-  const years = Array.from({ length: 50 }, (_, i) => currentDate.getFullYear() - 25 + i);
-  const currentMonthWeeks = getWeeksInMonth(selectedYear, selectedMonth);
+  const roles = ['employee', 'manager', 'hr', 'admin', 'finance'];
+  const departments = ['Engineering', 'Design', 'Human Resources', 'Finance', 'Marketing', 'Sales', 'Operations'];
 
   // Set dates based on active tab
   useEffect(() => {
     if (activeTab === 'weekly') {
-      const weekDates = getWeekDates(new Date(selectedWeek));
+      const weekDates = getCurrentWeekDates();
       setStartDate(weekDates.startDate);
       setEndDate(weekDates.endDate);
     } else if (activeTab === 'monthly') {
@@ -282,12 +273,10 @@ export function AttendanceReport({ user }: AttendanceReportProps) {
         setEndDate(monthDates[monthDates.length - 1].weekEnd);
       }
     }
-  }, [activeTab, selectedMonth, selectedYear, selectedWeek]);
+  }, [activeTab, selectedMonth, selectedYear]);
 
   // Fetch report when filters change
   useEffect(() => {
-    console.log('Fetching reports with:', { activeTab, startDate, endDate, roleFilter, selectedDate, selectedMonth, selectedYear, selectedWeek });
-    
     fetchReport();
     if (activeTab === 'weekly') {
       fetchWeeklyDetailedReport();
@@ -296,7 +285,7 @@ export function AttendanceReport({ user }: AttendanceReportProps) {
     } else if (activeTab === 'dateBased') {
       fetchDateBasedReport();
     }
-  }, [startDate, endDate, roleFilter, activeTab, selectedDate, selectedMonth, selectedYear, selectedWeek]);
+  }, [startDate, endDate, roleFilter, departmentFilter, activeTab, selectedDate, selectedMonth, selectedYear]);
 
   const fetchReport = async () => {
     setIsLoading(true);
@@ -306,8 +295,12 @@ export function AttendanceReport({ user }: AttendanceReportProps) {
         endDate,
       };
 
-      if (roleFilter && roleFilter !== 'all') {
+      if (roleFilter.length > 0 && !roleFilter.includes('all')) {
         params.roles = roleFilter;
+      }
+
+      if (departmentFilter !== 'all') {
+        params.department = departmentFilter;
       }
 
       const data = await reportsApi.attendanceReport(params);
@@ -325,23 +318,12 @@ export function AttendanceReport({ user }: AttendanceReportProps) {
 
   const fetchWeeklyDetailedReport = async () => {
     try {
-      console.log('Fetching weekly report for:', startDate, 'to', endDate);
-      
-      const params: any = {
-        startDate,
-        endDate,
-      };
-
-      if (roleFilter && roleFilter !== 'all') {
-        params.roles = roleFilter;
-      }
-
-      const data = await reportsApi.weeklyAttendanceReport(params);
-      console.log('Weekly data received:', data);
-      setWeeklyData(data || []);
+      const teamData = await attendanceApi.getTeamAttendance(startDate);
+      setTeamAttendance(teamData || []);
+      const weeklyReportData = transformToWeeklyView(teamData);
+      setWeeklyData(weeklyReportData);
     } catch (error) {
       console.error('Failed to load weekly detailed report:', error);
-      toast.error('Failed to load weekly attendance data');
     }
   };
 
@@ -351,99 +333,173 @@ export function AttendanceReport({ user }: AttendanceReportProps) {
       const monthlyReportData: MonthlyWeekData[] = [];
 
       for (const week of monthWeeks) {
-        console.log('Fetching monthly week:', week.weekStart, 'to', week.weekEnd);
-        
-        const params: any = {
-          startDate: week.weekStart,
-          endDate: week.weekEnd,
-        };
-
-        if (roleFilter && roleFilter !== 'all') {
-          params.roles = roleFilter;
-        }
-
-        const weeklyData = await reportsApi.weeklyAttendanceReport(params);
-        console.log(`Week ${week.weekNumber} data:`, weeklyData);
+        const teamData = await attendanceApi.getTeamAttendance(week.weekStart);
+        const weeklyData = transformToWeeklyView(teamData);
         
         monthlyReportData.push({
           ...week,
-          employees: weeklyData || [],
-          totalHours: weeklyData ? weeklyData.reduce((sum, emp) => sum + emp.totalHours, 0) : 0,
-          presentDays: weeklyData ? weeklyData.reduce((sum, emp) => sum + emp.presentDays, 0) : 0,
-          absentDays: weeklyData ? weeklyData.reduce((sum, emp) => sum + emp.absentDays, 0) : 0
+          employees: weeklyData,
+          totalHours: weeklyData.reduce((sum, emp) => sum + emp.totalHours, 0),
+          presentDays: weeklyData.reduce((sum, emp) => sum + emp.presentDays, 0),
+          absentDays: weeklyData.reduce((sum, emp) => sum + emp.absentDays, 0)
         });
       }
 
       setMonthlyData(monthlyReportData);
-      console.log('Monthly data set:', monthlyReportData);
     } catch (error) {
       console.error('Failed to load monthly detailed report:', error);
-      toast.error('Failed to load monthly attendance data');
     }
   };
 
   const fetchDateBasedReport = async () => {
     try {
       const teamData = await attendanceApi.getTeamAttendance(selectedDate);
-      console.log('teamData:', teamData);
       const dateData = transformToDateBasedView(teamData);
       setDateBasedData(dateData);
     } catch (error) {
       console.error('Failed to load date-based report:', error);
-      toast.error('Failed to load date-based attendance data');
     }
+  };
+
+  const transformToWeeklyView = (attendanceData: any[]): WeeklyEmployeeData[] => {
+    const weekDays = getWeekDays(startDate);
+    const employeeMap = new Map();
+
+    attendanceData.forEach(record => {
+      if (!employeeMap.has(record.user_id)) {
+        employeeMap.set(record.user_id, {
+          employeeId: record.employee_code || `EMP${record.user_id}`,
+          employeeName: record.user_name,
+          department: record.department || 'Not Assigned',
+          dailyAttendance: weekDays.map(day => ({
+            date: day.date,
+            day: day.day,
+            checkIn: '',
+            checkOut: '',
+            hours: 0,
+            status: 'absent',
+            lateArrival: false,
+            earlyCheckout: false,
+            lateCheckout: false,
+            earlyCheckin: false
+          })),
+          totalHours: 0,
+          presentDays: 0,
+          absentDays: 0,
+          lateArrivals: 0,
+          earlyCheckouts: 0
+        });
+      }
+
+      const employee = employeeMap.get(record.user_id);
+      const dayIndex = weekDays.findIndex(day => day.date === record.work_date);
+      
+      if (dayIndex !== -1) {
+        const checkInTime = record.check_in_at;
+        const checkOutTime = record.check_out_at;
+        const lateArrival = isLateArrival(checkInTime);
+        const earlyCheckout = isEarlyCheckout(checkInTime, checkOutTime);
+        const earlyCheckin = isEarlyCheckin(checkInTime);
+        const lateCheckout = isLateCheckout(checkOutTime);
+        
+        let hours = 0;
+        if (checkInTime && checkOutTime) {
+          hours = (new Date(checkOutTime).getTime() - new Date(checkInTime).getTime()) / (1000 * 60 * 60);
+          hours = Math.round(hours * 10) / 10;
+        }
+
+        employee.dailyAttendance[dayIndex] = {
+          date: record.work_date,
+          day: weekDays[dayIndex].day,
+          checkIn: checkInTime,
+          checkOut: checkOutTime,
+          hours: hours,
+          status: record.status || 'present',
+          lateArrival: lateArrival,
+          earlyCheckout: earlyCheckout,
+          earlyCheckin: earlyCheckin,
+          lateCheckout: lateCheckout
+        };
+
+        if (record.status === 'present') {
+          employee.presentDays++;
+          employee.totalHours += hours;
+          if (lateArrival) employee.lateArrivals++;
+          if (earlyCheckout) employee.earlyCheckouts++;
+        } else if (record.status === 'absent') {
+          employee.absentDays++;
+        }
+      }
+    });
+
+    return Array.from(employeeMap.values());
   };
 
   const transformToDateBasedView = (attendanceData: any[]): WeeklyEmployeeData[] => {
     const employeeMap = new Map();
 
-    if (attendanceData && attendanceData.length > 0) {
-      attendanceData.forEach(record => {
-        if (!employeeMap.has(record.user_id)) {
-          const checkInTime = record.check_in_at;
-          const checkOutTime = record.check_out_at;
-          
-          // Use the same logic as backend for consistency
-          const lateArrival = checkInTime ? new Date(checkInTime).getHours() >= 9 : false;
-          const earlyCheckout = checkInTime && checkOutTime ? 
-            (new Date(checkOutTime).getTime() - new Date(checkInTime).getTime()) / (1000 * 60 * 60) < 8 : false;
-          const earlyCheckin = checkInTime ? new Date(checkInTime).getHours() < 9 : false;
-          const lateCheckout = checkOutTime ? new Date(checkOutTime).getHours() >= 18 : false;
-          
-          let hours = 0;
-          if (checkInTime && checkOutTime) {
-            hours = (new Date(checkOutTime).getTime() - new Date(checkInTime).getTime()) / (1000 * 60 * 60);
-            hours = Math.round(hours * 10) / 10;
-          }
+    attendanceData.forEach(record => {
+      if (!employeeMap.has(record.user_id)) {
+        employeeMap.set(record.user_id, {
+          employeeId: record.employee_code || `EMP${record.user_id}`,
+          employeeName: record.user_name,
+          department: record.department || 'Not Assigned',
+          dailyAttendance: [{
+            date: selectedDate,
+            day: new Date(selectedDate).toLocaleDateString('en-US', { weekday: 'short' }),
+            checkIn: record.check_in_at,
+            checkOut: record.check_out_at,
+            hours: 0,
+            status: record.status || 'absent',
+            lateArrival: isLateArrival(record.check_in_at),
+            earlyCheckout: isEarlyCheckout(record.check_in_at, record.check_out_at),
+            earlyCheckin: isEarlyCheckin(record.check_in_at),
+            lateCheckout: isLateCheckout(record.check_out_at)
+          }],
+          totalHours: 0,
+          presentDays: 0,
+          absentDays: 0,
+          lateArrivals: 0,
+          earlyCheckouts: 0
+        });
+      }
 
-          const status = record.status || (checkInTime ? 'present' : 'absent');
+      const employee = employeeMap.get(record.user_id);
+      const checkInTime = record.check_in_at;
+      const checkOutTime = record.check_out_at;
+      const lateArrival = isLateArrival(checkInTime);
+      const earlyCheckout = isEarlyCheckout(checkInTime, checkOutTime);
+      const earlyCheckin = isEarlyCheckin(checkInTime);
+      const lateCheckout = isLateCheckout(checkOutTime);
+      
+      let hours = 0;
+      if (checkInTime && checkOutTime) {
+        hours = (new Date(checkOutTime).getTime() - new Date(checkInTime).getTime()) / (1000 * 60 * 60);
+        hours = Math.round(hours * 10) / 10;
+      }
 
-          employeeMap.set(record.user_id, {
-            employeeId: record.employee_code || `EMP${record.user_id}`,
-            employeeName: record.user_name,
-            department: record.department || 'Not Assigned',
-            role: record.role || 'employee',
-            dailyAttendance: [{
-              date: selectedDate,
-              day: new Date(selectedDate).toLocaleDateString('en-US', { weekday: 'short' }),
-              checkIn: checkInTime,
-              checkOut: checkOutTime,
-              hours: hours,
-              status: status,
-              lateArrival: lateArrival,
-              earlyCheckout: earlyCheckout,
-              earlyCheckin: earlyCheckin,
-              lateCheckout: lateCheckout
-            }],
-            totalHours: hours,
-            presentDays: status === 'present' ? 1 : 0,
-            absentDays: status === 'present' ? 0 : 1,
-            lateArrivals: lateArrival ? 1 : 0,
-            earlyCheckouts: earlyCheckout ? 1 : 0
-          });
-        }
-      });
-    }
+      employee.dailyAttendance[0] = {
+        date: selectedDate,
+        day: new Date(selectedDate).toLocaleDateString('en-US', { weekday: 'short' }),
+        checkIn: checkInTime,
+        checkOut: checkOutTime,
+        hours: hours,
+        status: record.status || 'present',
+        lateArrival: lateArrival,
+        earlyCheckout: earlyCheckout,
+        earlyCheckin: earlyCheckin,
+        lateCheckout: lateCheckout
+      };
+
+      if (record.status === 'present') {
+        employee.presentDays++;
+        employee.totalHours += hours;
+        if (lateArrival) employee.lateArrivals++;
+        if (earlyCheckout) employee.earlyCheckouts++;
+      } else if (record.status === 'absent') {
+        employee.absentDays++;
+      }
+    });
 
     return Array.from(employeeMap.values());
   };
@@ -452,14 +508,12 @@ export function AttendanceReport({ user }: AttendanceReportProps) {
     const prevWeek = getPreviousWeek(startDate);
     setStartDate(prevWeek.startDate);
     setEndDate(prevWeek.endDate);
-    setSelectedWeek(prevWeek.startDate);
   };
 
   const handleNextWeek = () => {
     const nextWeek = getNextWeek(startDate);
     setStartDate(nextWeek.startDate);
     setEndDate(nextWeek.endDate);
-    setSelectedWeek(nextWeek.startDate);
   };
 
   const handlePreviousMonth = () => {
@@ -506,92 +560,50 @@ export function AttendanceReport({ user }: AttendanceReportProps) {
     });
   };
 
-  const handleExportWeekly = () => {
-    const exportData = weeklyDataByDate.flatMap(dateData => 
-      dateData.employees.map(employee => ({
-        'Date': dateData.fullDate,
-        'Day': dateData.day,
-        'Employee Code': employee.employeeId,
-        'Employee Name': employee.employeeName,
-        'Department': employee.department,
-        'Status': employee.status,
-        'Check In': formatTime(employee.checkIn),
-        'Check Out': formatTime(employee.checkOut),
-        'Late Arrival': employee.lateArrival ? 'Yes' : 'No',
-        'Early Checkin': employee.earlyCheckin ? 'Yes' : 'No',
-        'Late Checkout': employee.lateCheckout ? 'Yes' : 'No',
-        'Early Checkout': employee.earlyCheckout ? 'Yes' : 'No',
-        'Total Hours': employee.hours > 0 ? `${employee.hours}h` : '-'
-      }))
-    );
-    
-    exportToExcel(exportData, `weekly-attendance-report-${startDate}-to-${endDate}`);
-    toast.success('Weekly report exported successfully');
+  const handleRoleSelect = (value: string) => {
+    if (value === 'all') {
+      setRoleFilter(['all']);
+    } else {
+      setRoleFilter(prev => {
+        const filtered = prev.filter(r => r !== 'all');
+        if (filtered.includes(value)) {
+          return filtered.filter(r => r !== value);
+        } else {
+          return [...filtered, value];
+        }
+      });
+    }
   };
 
-  const handleExportMonthly = () => {
-    const exportData = monthlyData.flatMap(week => 
-      week.employees.flatMap(employee => 
-        employee.dailyAttendance.map(day => ({
-          'Week': `Week ${week.weekNumber}`,
-          'Date': `${new Date(day.date).getDate().toString().padStart(2, '0')}/${(new Date(day.date).getMonth() + 1).toString().padStart(2, '0')}/${new Date(day.date).getFullYear()}`,
-          'Day': day.day,
-          'Employee Code': employee.employeeId,
-          'Employee Name': employee.employeeName,
-          'Department': employee.department,
-          'Status': day.status,
-          'Check In': formatTime(day.checkIn),
-          'Check Out': formatTime(day.checkOut),
-          'Late Arrival': day.lateArrival ? 'Yes' : 'No',
-          'Early Checkin': day.earlyCheckin ? 'Yes' : 'No',
-          'Late Checkout': day.lateCheckout ? 'Yes' : 'No',
-          'Early Checkout': day.earlyCheckout ? 'Yes' : 'No',
-          'Total Hours': day.hours > 0 ? `${day.hours}h` : '-'
-        }))
-      )
-    );
-    
-    exportToExcel(exportData, `monthly-attendance-report-${selectedYear}-${selectedMonth + 1}`);
-    toast.success('Monthly report exported successfully');
-  };
+  const handleExport = () => {
+    try {
+      if (filteredData.length === 0) {
+        toast.error('No data to export');
+        return;
+      }
 
-  const handleExportDateBased = () => {
-    const exportData = filteredDateBasedData.map(employee => {
-      const day = employee.dailyAttendance[0];
-      return {
-        'Date': `${new Date(selectedDate).getDate().toString().padStart(2, '0')}/${(new Date(selectedDate).getMonth() + 1).toString().padStart(2, '0')}/${new Date(selectedDate).getFullYear()}`,
-        'Day': day.day,
-        'Employee Code': employee.employeeId,
-        'Employee Name': employee.employeeName,
-        'Department': employee.department,
-        'Status': day.status,
-        'Check In': formatTime(day.checkIn),
-        'Check Out': formatTime(day.checkOut),
-        'Late Arrival': day.lateArrival ? 'Yes' : 'No',
-        'Early Checkin': day.earlyCheckin ? 'Yes' : 'No',
-        'Late Checkout': day.lateCheckout ? 'Yes' : 'No',
-        'Early Checkout': day.earlyCheckout ? 'Yes' : 'No',
-        'Total Hours': day.hours > 0 ? `${day.hours}h` : '-'
-      };
-    });
-    
-    exportToExcel(exportData, `date-based-attendance-report-${selectedDate}`);
-    toast.success('Date-based report exported successfully');
+      exportToExcel(filteredData, startDate, endDate, activeTab);
+      toast.success('Report exported successfully as Excel file');
+    } catch (error) {
+      toast.error('Failed to export report');
+      console.error('Export error:', error);
+    }
   };
 
   const filteredData = reportData.filter(row => {
-    const roleMatch = roleFilter === 'all' || row.role === roleFilter;
-    return roleMatch;
+    const roleMatch = roleFilter.includes('all') || roleFilter.includes(row.role);
+    const departmentMatch = departmentFilter === 'all' || row.department === departmentFilter;
+    return roleMatch && departmentMatch;
   });
 
   const filteredWeeklyData = weeklyData.filter(row => {
-    const roleMatch = roleFilter === 'all' || row.role === roleFilter;
-    return roleMatch;
+    const departmentMatch = departmentFilter === 'all' || row.department === departmentFilter;
+    return departmentMatch;
   });
 
   const filteredDateBasedData = dateBasedData.filter(row => {
-    const roleMatch = roleFilter === 'all' || true;
-    return roleMatch;
+    const departmentMatch = departmentFilter === 'all' || row.department === departmentFilter;
+    return departmentMatch;
   });
 
   const getStatusBadge = (attendance: DailyAttendance) => {
@@ -626,37 +638,58 @@ export function AttendanceReport({ user }: AttendanceReportProps) {
   };
 
   // Group weekly data by date
-  const getWeeklyDataByDate = () => {
-    const dateMap = new Map();
-    const weekDays = getWeekDays(startDate);
-    
-    // Initialize all dates in the week
-    weekDays.forEach(day => {
-      dateMap.set(day.date, {
-        date: day.date,
-        fullDate: day.fullDate,
-        day: day.day,
-        employees: []
+// Update the getWeeklyDataByDate function to use the correct date format
+const getWeeklyDataByDate = () => {
+  const dateMap = new Map();
+  
+  filteredWeeklyData.forEach(employee => {
+    employee.dailyAttendance.forEach(day => {
+      if (!dateMap.has(day.date)) {
+        const dateObj = new Date(day.date);
+        // Format as "13:11:2025" (date:month:year)
+        const formattedDate = `${dateObj.getDate().toString().padStart(2, '0')}/${(dateObj.getMonth() + 1).toString().padStart(2, '0')}/${dateObj.getFullYear()}`;
+        
+        dateMap.set(day.date, {
+          date: day.date,
+          fullDate: formattedDate, // This will show as "13:11:2025"
+          day: day.day,
+          employees: []
+        });
+      }
+      
+      const dateData = dateMap.get(day.date);
+      dateData.employees.push({
+        employeeId: employee.employeeId,
+        employeeName: employee.employeeName,
+        department: employee.department,
+        ...day
       });
     });
+  });
+  
+  return Array.from(dateMap.values()).sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+};
 
-    // Fill in employee data for each date
-    filteredWeeklyData.forEach(employee => {
-      employee.dailyAttendance.forEach(day => {
-        const dateData = dateMap.get(day.date);
-        if (dateData) {
-          dateData.employees.push({
-            employeeId: employee.employeeId,
-            employeeName: employee.employeeName,
-            department: employee.department,
-            ...day
-          });
-        }
-      });
-    });
+// Also update the getWeekDays function to use the same format for monthly view
+const getWeekDays = (startDate: string) => {
+  const start = new Date(startDate);
+  const days = [];
+  
+  for (let i = 0; i < 7; i++) {
+    const date = new Date(start);
+    date.setDate(start.getDate() + i);
+    // Format as "13:11:2025" (date:month:year)
+    const formattedDate = `${date.getDate().toString().padStart(2, '0')}/${(date.getMonth() + 1).toString().padStart(2, '0')}/${date.getFullYear()}`;
     
-    return Array.from(dateMap.values()).sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
-  };
+    days.push({
+      date: date.toISOString().split('T')[0],
+      day: date.toLocaleDateString('en-US', { weekday: 'short' }),
+      fullDate: formattedDate // This will show as "13:11:2025"
+    });
+  }
+  
+  return days;
+};
 
   const weeklyDataByDate = getWeeklyDataByDate();
 
@@ -717,7 +750,7 @@ export function AttendanceReport({ user }: AttendanceReportProps) {
         {employees.length === 0 ? (
           <TableRow>
             <TableCell colSpan={11} className="text-center py-8 text-gray-500">
-              No attendance records found for this date
+              No attendance records found
             </TableCell>
           </TableRow>
         ) : (
@@ -798,6 +831,104 @@ export function AttendanceReport({ user }: AttendanceReportProps) {
         <p className="text-gray-500">Generate and export detailed attendance reports</p>
       </div>
 
+      <Card>
+        <CardHeader>
+          <CardTitle>Filters</CardTitle>
+          <CardDescription>Select date range and filters for the report</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
+            <div>
+              <label className="text-sm mb-2 block">Start Date</label>
+              <Input
+                type="date"
+                value={startDate}
+                onChange={(e) => setStartDate(e.target.value)}
+              />
+            </div>
+            <div>
+              <label className="text-sm mb-2 block">End Date</label>
+              <Input
+                type="date"
+                value={endDate}
+                onChange={(e) => setEndDate(e.target.value)}
+              />
+            </div>
+            <div>
+              <label className="text-sm mb-2 block">Roles</label>
+              <Select 
+                value={roleFilter.includes('all') ? 'all' : roleFilter[0]}
+                onValueChange={handleRoleSelect}
+              >
+                <SelectTrigger>
+                  <SelectValue>
+                    {roleFilter.includes('all') 
+                      ? 'All Roles' 
+                      : `${roleFilter.length} role(s) selected`
+                    }
+                  </SelectValue>
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All Roles</SelectItem>
+                  {roles.map(role => (
+                    <SelectItem key={role} value={role}>
+                      <div className="flex items-center">
+                        <span className={`mr-2 ${roleFilter.includes(role) ? 'text-blue-600' : 'text-gray-400'}`}>
+                          {roleFilter.includes(role) ? '✓' : '○'}
+                        </span>
+                        {capitalizeFirstLetter(role)}
+                      </div>
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              {roleFilter.length > 0 && !roleFilter.includes('all') && (
+                <div className="flex flex-wrap gap-1 mt-2">
+                  {roleFilter.map(role => (
+                    <span 
+                      key={role}
+                      className="inline-flex items-center px-2 py-1 rounded-full text-xs bg-blue-100 text-blue-800"
+                    >
+                      {capitalizeFirstLetter(role)}
+                      <button
+                        onClick={() => setRoleFilter(prev => prev.filter(r => r !== role))}
+                        className="ml-1 hover:text-blue-600"
+                      >
+                        ×
+                      </button>
+                    </span>
+                  ))}
+                </div>
+              )}
+            </div>
+            <div>
+              <label className="text-sm mb-2 block">Department</label>
+              <Select value={departmentFilter} onValueChange={setDepartmentFilter}>
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All Departments</SelectItem>
+                  {departments.map(dept => (
+                    <SelectItem key={dept} value={dept}>{dept}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="flex items-end">
+              <Button 
+                onClick={handleExport} 
+                className="w-full gap-2" 
+                disabled={isLoading || filteredData.length === 0}
+              >
+                <Download className="w-4 h-4" />
+                Export to Excel
+              </Button>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+
       <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-4">
         <TabsList className="grid grid-cols-3 w-full max-w-md">
           <TabsTrigger value="weekly">Weekly Report</TabsTrigger>
@@ -808,81 +939,13 @@ export function AttendanceReport({ user }: AttendanceReportProps) {
         <TabsContent value="weekly">
           <Card>
             <CardHeader>
-              <div className="flex justify-between items-center">
-                <div>
-                  <CardTitle>Weekly Attendance Report</CardTitle>
-                  <CardDescription>
-                    Detailed daily attendance for the selected week
-                    {isLoading && <span className="ml-2 text-blue-500">Loading...</span>}
-                  </CardDescription>
-                </div>
-              </div>
+              <CardTitle>Weekly Attendance Report</CardTitle>
+              <CardDescription>
+                Detailed daily attendance for the selected week
+                {isLoading && <span className="ml-2 text-blue-500">Loading...</span>}
+              </CardDescription>
             </CardHeader>
             <CardContent>
-              <div className='w-full'>
-                <div className="grid grid-cols-1 md:grid-cols-5 gap-4 mb-6">
-                  <div>
-                    <label className="text-sm mb-2 block">Year</label>
-                    <Select value={selectedYear.toString()} onValueChange={(value) => setSelectedYear(parseInt(value))}>
-                      <SelectTrigger>
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {years.map(year => (
-                          <SelectItem key={year} value={year.toString()}>{year}</SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
-                  <div>
-                    <label className="text-sm mb-2 block">Month</label>
-                    <Select value={selectedMonth.toString()} onValueChange={(value) => setSelectedMonth(parseInt(value))}>
-                      <SelectTrigger>
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {months.map(month => (
-                          <SelectItem key={month.value} value={month.value.toString()}>{month.label}</SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
-                  <div>
-                    <label className="text-sm mb-2 block">Week</label>
-                    <Select value={selectedWeek} onValueChange={setSelectedWeek}>
-                      <SelectTrigger>
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {currentMonthWeeks.map(week => (
-                          <SelectItem key={week.value} value={week.value}>{week.label}</SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
-                  <div>
-                    <label className="text-sm mb-2 block">Role</label>
-                    <Select value={roleFilter} onValueChange={setRoleFilter}>
-                      <SelectTrigger>
-                        <SelectValue placeholder="All Roles" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {roles.map(role => (
-                          <SelectItem key={role} value={role}>
-                            {role === 'all' ? 'All Roles' : capitalizeFirstLetter(role)}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
-                  <div className="flex items-end">
-                    <Button onClick={handleExportWeekly} className="w-full gap-2" >
-                      <Download className="w-4 h-4" />
-                      Export
-                    </Button>
-                  </div>
-                </div>
-              </div>
               <WeekNavigation />
               <div className="space-y-4">
                 {weeklyDataByDate.map((dateData) => (
@@ -926,68 +989,13 @@ export function AttendanceReport({ user }: AttendanceReportProps) {
         <TabsContent value="monthly">
           <Card>
             <CardHeader>
-              <div className="flex justify-between items-center">
-                <div>
-                  <CardTitle>Monthly Attendance Report</CardTitle>
-                  <CardDescription>
-                    Monthly attendance summary with weekly breakdown
-                    {isLoading && <span className="ml-2 text-blue-500">Loading...</span>}
-                  </CardDescription>
-                </div>
-              </div>
+              <CardTitle>Monthly Attendance Report</CardTitle>
+              <CardDescription>
+                Monthly attendance summary with weekly breakdown
+                {isLoading && <span className="ml-2 text-blue-500">Loading...</span>}
+              </CardDescription>
             </CardHeader>
             <CardContent>
-              <div className='w-full'>
-                <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
-                  <div>
-                    <label className="text-sm mb-2 block">Year</label>
-                    <Select value={selectedYear.toString()} onValueChange={(value) => setSelectedYear(parseInt(value))}>
-                      <SelectTrigger>
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {years.map(year => (
-                          <SelectItem key={year} value={year.toString()}>{year}</SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
-                  <div>
-                    <label className="text-sm mb-2 block">Month</label>
-                    <Select value={selectedMonth.toString()} onValueChange={(value) => setSelectedMonth(parseInt(value))}>
-                      <SelectTrigger>
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {months.map(month => (
-                          <SelectItem key={month.value} value={month.value.toString()}>{month.label}</SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
-                  <div>
-                    <label className="text-sm mb-2 block">Role</label>
-                    <Select value={roleFilter} onValueChange={setRoleFilter}>
-                      <SelectTrigger>
-                        <SelectValue placeholder="All Roles" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {roles.map(role => (
-                          <SelectItem key={role} value={role}>
-                            {role === 'all' ? 'All Roles' : capitalizeFirstLetter(role)}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
-                  <div className="flex items-end">
-                    <Button onClick={handleExportMonthly} className="w-full gap-2" >
-                      <Download className="w-4 h-4" />
-                      Export
-                    </Button>
-                  </div>
-                </div>
-              </div>
               <MonthNavigation />
               <div className="space-y-4">
                 {monthlyData.map((week, weekIndex) => (
@@ -1003,8 +1011,8 @@ export function AttendanceReport({ user }: AttendanceReportProps) {
                           Week {week.weekNumber} ({new Date(week.weekStart).toLocaleDateString()} - {new Date(week.weekEnd).toLocaleDateString()})
                         </div>
                         <div className="flex space-x-4 text-sm text-gray-600">
-                          <span>Employees: {week.employees.length}</span>
-                          <span>Present Days: {week.presentDays}</span>
+                          <span>Present: {week.presentDays}</span>
+                          <span>Absent: {week.absentDays}</span>
                           <span>Total Hours: {week.totalHours.toFixed(1)}h</span>
                         </div>
                       </div>
@@ -1067,33 +1075,21 @@ export function AttendanceReport({ user }: AttendanceReportProps) {
         <TabsContent value="dateBased">
           <Card>
             <CardHeader>
-              <div className="flex justify-between items-center">
-                <div>
-                  <CardTitle>Date Based Attendance Report</CardTitle>
-                  <CardDescription>
-                    Attendance report for selected date
-                    {isLoading && <span className="ml-2 text-blue-500">Loading...</span>}
-                  </CardDescription>
-                </div>
-              </div>
+              <CardTitle>Date Based Attendance Report</CardTitle>
+              <CardDescription>
+                Attendance report for selected date
+                {isLoading && <span className="ml-2 text-blue-500">Loading...</span>}
+              </CardDescription>
             </CardHeader>
             <CardContent>
-              <div className='w-80'>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
-                  <div >
-                    <label className="text-sm mb-2 block">Select Date</label>
-                    <Input
-                      type="date"
-                      value={selectedDate}
-                      onChange={(e) => setSelectedDate(e.target.value)}
-                    />
-                  </div>
-                  <div className="flex items-end">
-                    <Button onClick={handleExportDateBased} className="w-full gap-2" >
-                      <Download className="w-4 h-4" />
-                      Export
-                    </Button>
-                  </div>
+              <div className="flex items-center space-x-4 mb-4">
+                <div>
+                  <label className="text-sm mb-2 block">Select Date</label>
+                  <Input
+                    type="date"
+                    value={selectedDate}
+                    onChange={(e) => setSelectedDate(e.target.value)}
+                  />
                 </div>
               </div>
               <div className="border rounded-lg overflow-x-auto">

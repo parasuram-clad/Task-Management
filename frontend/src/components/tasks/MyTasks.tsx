@@ -44,6 +44,13 @@ interface TimeLog {
   project_id?: number;
 }
 
+interface CalendarDay {
+  date: Date;
+  isCurrentMonth: boolean;
+  isToday: boolean;
+  tasks: Task[];
+}
+
 export function MyTasks({ user, navigateTo }: MyTasksProps) {
   const [searchTerm, setSearchTerm] = useState('');
   const [filterProject, setFilterProject] = useState('all');
@@ -53,26 +60,28 @@ export function MyTasks({ user, navigateTo }: MyTasksProps) {
   const [isLoading, setIsLoading] = useState(false);
   const [apiTasks, setApiTasks] = useState<ApiTask[]>([]);
   const [projects, setProjects] = useState<Project[]>([]);
-  const [viewType, setViewType] = useState<'current' | 'due-date'>('current');
-  const [expandedDates, setExpandedDates] = useState<Set<string>>(new Set());
+  const [viewType, setViewType] = useState<'current' | 'calendar'>('current');
   const [timeLogs, setTimeLogs] = useState<TimeLog[]>([]);
-const [newTimeLog, setNewTimeLog] = useState<Omit<TimeLog, 'id' | 'loggedBy'>>({
-  date: new Date().toISOString().split('T')[0], // Ensure YYYY-MM-DD format
-  hours: 0,
-  minutes: 0,
-  description: ''
-});
+  const [currentMonth, setCurrentMonth] = useState(new Date());
+  
+  const [newTimeLog, setNewTimeLog] = useState<Omit<TimeLog, 'id' | 'loggedBy'>>({
+    date: new Date().toISOString().split('T')[0],
+    hours: 0,
+    minutes: 0,
+    description: ''
+  });
   const [isUpdatingStatus, setIsUpdatingStatus] = useState(false);
   const useApi = apiConfig.hasBaseUrl();
-const [localTaskStatus, setLocalTaskStatus] = useState<Task['status'] | null>(null);
+  const [localTaskStatus, setLocalTaskStatus] = useState<Task['status'] | null>(null);
 
   const capitalizeFirstLetter = (str: string) => {
-  return str.charAt(0).toUpperCase() + str.slice(1);
-};
+    return str.charAt(0).toUpperCase() + str.slice(1);
+  };
 
-const capitalizeWords = (str: string) => {
-  return str.split(' ').map(word => capitalizeFirstLetter(word)).join(' ');
-};
+  const capitalizeWords = (str: string) => {
+    return str.split(' ').map(word => capitalizeFirstLetter(word)).join(' ');
+  };
+
   // Fetch tasks and projects from API
   useEffect(() => {
     if (useApi) {
@@ -107,172 +116,163 @@ const capitalizeWords = (str: string) => {
   };
 
   // Fetch time logs for selected task
-// Updated fetchTimeLogsForTask using the new API
-const fetchTimeLogsForTask = async (taskId: string) => {
-  if (!useApi) {
-    setTimeLogs([]);
-    return;
-  }
-
-  try {
-    console.log('Fetching time logs for task:', taskId);
-    
-    // Use the new API endpoint to get time logs by task
-    const timeLogsData = await timesheetApi.getTimeLogsByTask(parseInt(taskId));
-    
-    console.log('Time logs data from API:', timeLogsData);
-
-    // Convert timesheet entries to TimeLog format
-    const logs: TimeLog[] = timeLogsData.map((entry: TimesheetEntry) => {
-      const totalHours = entry.hours;
-      const hours = Math.floor(totalHours);
-      const minutes = Math.round((totalHours - hours) * 60);
-      
-      return {
-        id: entry.id?.toString() || `temp-${Date.now()}`,
-        date: entry.work_date || entry.workDate || '',
-        hours,
-        minutes,
-        description: entry.note || 'No description',
-        loggedBy: user.name,
-        task_id: taskId,
-        project_id: entry.project_id || entry.projectId
-      };
-    });
-
-    console.log(`Total time logs found for task ${taskId}:`, logs.length);
-    setTimeLogs(logs);
-    
-  } catch (error) {
-    console.error('Failed to fetch time logs:', error);
-    // Fallback to checking multiple weeks if new API fails
-    await fetchTimeLogsFallback(taskId);
-  }
-};
-
-// Fallback method that checks multiple weeks
-const fetchTimeLogsFallback = async (taskId: string) => {
-  try {
-    const today = new Date();
-    const weeksToCheck = 12;
-    const allLogs: TimeLog[] = [];
-    
-    for (let i = 0; i < weeksToCheck; i++) {
-      try {
-        const checkDate = new Date(today);
-        checkDate.setDate(today.getDate() - (i * 7));
-        const dayOfWeek = checkDate.getDay();
-        const diff = checkDate.getDate() - dayOfWeek + (dayOfWeek === 0 ? -6 : 1);
-        const weekStartDate = new Date(checkDate.setDate(diff));
-        const weekStartDateStr = weekStartDate.toISOString().split('T')[0];
-
-        const timesheet = await timesheetApi.getWeekly(weekStartDateStr);
-        
-        if (timesheet && timesheet.entries) {
-          const taskEntries = timesheet.entries.filter((entry: TimesheetEntry) => {
-            const entryTaskId = entry.task_id || entry.taskId;
-            return entryTaskId === parseInt(taskId);
-          });
-
-          const logs: TimeLog[] = taskEntries.map((entry: TimesheetEntry) => {
-            const totalHours = entry.hours;
-            const hours = Math.floor(totalHours);
-            const minutes = Math.round((totalHours - hours) * 60);
-            
-            return {
-              id: entry.id?.toString() || `temp-${Date.now()}`,
-              date: entry.work_date || entry.workDate || '',
-              hours,
-              minutes,
-              description: entry.note || 'No description',
-              loggedBy: user.name,
-              task_id: taskId,
-              project_id: entry.project_id || entry.projectId
-            };
-          });
-
-          allLogs.push(...logs);
-        }
-      } catch (error) {
-        continue;
-      }
+  const fetchTimeLogsForTask = async (taskId: string) => {
+    if (!useApi) {
+      setTimeLogs([]);
+      return;
     }
 
-    allLogs.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
-    setTimeLogs(allLogs);
-    
-  } catch (error) {
-    console.error('Fallback method also failed:', error);
-    setTimeLogs([]);
-  }
-};
+    try {
+      console.log('Fetching time logs for task:', taskId);
+      const timeLogsData = await timesheetApi.getTimeLogsByTask(parseInt(taskId));
+      console.log('Time logs data from API:', timeLogsData);
+
+      const logs: TimeLog[] = timeLogsData.map((entry: TimesheetEntry) => {
+        const totalHours = entry.hours;
+        const hours = Math.floor(totalHours);
+        const minutes = Math.round((totalHours - hours) * 60);
+        
+        return {
+          id: entry.id?.toString() || `temp-${Date.now()}`,
+          date: entry.work_date || entry.workDate || '',
+          hours,
+          minutes,
+          description: entry.note || 'No description',
+          loggedBy: user.name,
+          task_id: taskId,
+          project_id: entry.project_id || entry.projectId
+        };
+      });
+
+      console.log(`Total time logs found for task ${taskId}:`, logs.length);
+      setTimeLogs(logs);
+      
+    } catch (error) {
+      console.error('Failed to fetch time logs:', error);
+      await fetchTimeLogsFallback(taskId);
+    }
+  };
+
+  const fetchTimeLogsFallback = async (taskId: string) => {
+    try {
+      const today = new Date();
+      const weeksToCheck = 12;
+      const allLogs: TimeLog[] = [];
+      
+      for (let i = 0; i < weeksToCheck; i++) {
+        try {
+          const checkDate = new Date(today);
+          checkDate.setDate(today.getDate() - (i * 7));
+          const dayOfWeek = checkDate.getDay();
+          const diff = checkDate.getDate() - dayOfWeek + (dayOfWeek === 0 ? -6 : 1);
+          const weekStartDate = new Date(checkDate.setDate(diff));
+          const weekStartDateStr = weekStartDate.toISOString().split('T')[0];
+
+          const timesheet = await timesheetApi.getWeekly(weekStartDateStr);
+          
+          if (timesheet && timesheet.entries) {
+            const taskEntries = timesheet.entries.filter((entry: TimesheetEntry) => {
+              const entryTaskId = entry.task_id || entry.taskId;
+              return entryTaskId === parseInt(taskId);
+            });
+
+            const logs: TimeLog[] = taskEntries.map((entry: TimesheetEntry) => {
+              const totalHours = entry.hours;
+              const hours = Math.floor(totalHours);
+              const minutes = Math.round((totalHours - hours) * 60);
+              
+              return {
+                id: entry.id?.toString() || `temp-${Date.now()}`,
+                date: entry.work_date || entry.workDate || '',
+                hours,
+                minutes,
+                description: entry.note || 'No description',
+                loggedBy: user.name,
+                task_id: taskId,
+                project_id: entry.project_id || entry.projectId
+              };
+            });
+
+            allLogs.push(...logs);
+          }
+        } catch (error) {
+          continue;
+        }
+      }
+
+      allLogs.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+      setTimeLogs(allLogs);
+      
+    } catch (error) {
+      console.error('Fallback method also failed:', error);
+      setTimeLogs([]);
+    }
+  };
 
   // Map API task to local Task format
-const mapApiTaskToLocal = (apiTask: ApiTask): Task => {
-  const statusMap: Record<string, Task['status']> = {
-    'todo': 'to-do',
-    'to_do': 'to-do',
-    'to-do': 'to-do',
-    'in_progress': 'in-progress',
-    'in-progress': 'in-progress',
-    'in progress': 'in-progress',
-    'blocked': 'blocked',
-    'done': 'done',
-    'completed': 'done',
+  const mapApiTaskToLocal = (apiTask: ApiTask): Task => {
+    const statusMap: Record<string, Task['status']> = {
+      'todo': 'to-do',
+      'to_do': 'to-do',
+      'to-do': 'to-do',
+      'in_progress': 'in-progress',
+      'in-progress': 'in-progress',
+      'in progress': 'in-progress',
+      'blocked': 'blocked',
+      'done': 'done',
+      'completed': 'done',
+    };
+
+    return {
+      id: apiTask.id.toString(),
+      title: capitalizeWords(apiTask.title),
+      description: apiTask.description ? capitalizeWords(apiTask.description) : '',
+      project: apiTask.project_name || 'Unknown Project',
+      project_id: apiTask.project_id,
+      status: statusMap[apiTask.status.toLowerCase()] || 'to-do',
+      priority: apiTask.priority as Task['priority'],
+      dueDate: apiTask.due_date || '',
+      assignedBy: apiTask.assignee_name || 'Manager',
+      createdAt: apiTask.created_at || new Date().toISOString(),
+    };
   };
 
-  return {
-    id: apiTask.id.toString(),
-    title: capitalizeWords(apiTask.title),
-    description: apiTask.description ? capitalizeWords(apiTask.description) : '',
-    project: apiTask.project_name || 'Unknown Project',
-    project_id: apiTask.project_id,
-    status: statusMap[apiTask.status.toLowerCase()] || 'to-do',
-    priority: apiTask.priority as Task['priority'],
-    dueDate: apiTask.due_date || '',
-    assignedBy: apiTask.assignee_name || 'Manager',
-    createdAt: apiTask.created_at || new Date().toISOString(),
+  const handleTaskSelect = async (task: Task) => {
+    setSelectedTask(task);
+    setLocalTaskStatus(task.status);
+    setShowTaskDialog(true);
+    
+    await fetchTimeLogsForTask(task.id);
+    
+    setNewTimeLog({
+      date: new Date().toISOString().split('T')[0],
+      hours: 0,
+      minutes: 0,
+      description: ''
+    });
   };
-};
-// Update the handleTaskSelect function
-const handleTaskSelect = async (task: Task) => {
-  setSelectedTask(task);
-  setLocalTaskStatus(task.status); // Initialize local status
-  setShowTaskDialog(true);
-  
-  // Fetch time logs immediately when task is selected
-  await fetchTimeLogsForTask(task.id);
-  
-  // Reset new time log form
-  setNewTimeLog({
-    date: new Date().toISOString().split('T')[0],
-    hours: 0,
-    minutes: 0,
-    description: ''
-  });
-};
 
-const handleStatusChange = (value: Task['status']) => {
-  setLocalTaskStatus(value);
-};
-const handleSaveTask = async () => {
-  if (!selectedTask || !localTaskStatus) return;
+  const handleStatusChange = (value: Task['status']) => {
+    setLocalTaskStatus(value);
+  };
 
-  try {
-    await handleUpdateStatus(selectedTask.id, localTaskStatus);
-    setShowTaskDialog(false);
-  } catch (error) {
-    // Error handling is already in handleUpdateStatus
-  }
-};
+  const handleSaveTask = async () => {
+    if (!selectedTask || !localTaskStatus) return;
 
-// Add this function to check if there are unsaved changes
-const hasUnsavedChanges = () => {
-  return selectedTask && localTaskStatus !== null && localTaskStatus !== selectedTask.status;
-};
+    try {
+      await handleUpdateStatus(selectedTask.id, localTaskStatus);
+      setShowTaskDialog(false);
+    } catch (error) {
+      // Error handling is already in handleUpdateStatus
+    }
+  };
 
-  // Use API tasks only (removed mock data)
-const tasks = apiTasks.map(mapApiTaskToLocal);
+  const hasUnsavedChanges = () => {
+    return selectedTask && localTaskStatus !== null && localTaskStatus !== selectedTask.status;
+  };
+
+  // Use API tasks only
+  const tasks = apiTasks.map(mapApiTaskToLocal);
 
   // Get unique project names from tasks
   const projectNames = [...new Set(tasks.map(task => task.project))];
@@ -288,7 +288,6 @@ const tasks = apiTasks.map(mapApiTaskToLocal);
         description: ''
       });
     } else if (selectedTask) {
-      // Mock data only when API is not available
       setTimeLogs([]);
     }
   }, [selectedTask, useApi]);
@@ -301,20 +300,55 @@ const tasks = apiTasks.map(mapApiTaskToLocal);
     return matchesSearch && matchesProject && matchesPriority;
   });
 
-  // Group tasks by due date for due-date view
-  const tasksByDueDate = filteredTasks.reduce((acc, task) => {
-    const dueDate = task.dueDate;
-    if (!acc[dueDate]) {
-      acc[dueDate] = [];
+  // Calendar view functions
+  const getDaysInMonth = (date: Date) => {
+    const year = date.getFullYear();
+    const month = date.getMonth();
+    const firstDay = new Date(year, month, 1);
+    const lastDay = new Date(year, month + 1, 0);
+    
+    const startDate = new Date(firstDay);
+    startDate.setDate(startDate.getDate() - firstDay.getDay());
+    
+    const endDate = new Date(lastDay);
+    endDate.setDate(endDate.getDate() + (6 - lastDay.getDay()));
+    
+    const days: CalendarDay[] = [];
+    const currentDate = new Date(startDate);
+    
+    while (currentDate <= endDate) {
+      const dateStr = currentDate.toISOString().split('T')[0];
+      const dayTasks = filteredTasks.filter(task => {
+        const taskDueDate = new Date(task.dueDate).toISOString().split('T')[0];
+        return taskDueDate === dateStr;
+      });
+      
+      days.push({
+        date: new Date(currentDate),
+        isCurrentMonth: currentDate.getMonth() === month,
+        isToday: currentDate.toDateString() === new Date().toDateString(),
+        tasks: dayTasks
+      });
+      
+      currentDate.setDate(currentDate.getDate() + 1);
     }
-    acc[dueDate].push(task);
-    return acc;
-  }, {} as Record<string, Task[]>);
+    
+    return days;
+  };
 
-  // Sort dates chronologically
-  const sortedDueDates = Object.keys(tasksByDueDate).sort((a, b) => 
-    new Date(a).getTime() - new Date(b).getTime()
-  );
+  const navigateMonth = (direction: 'prev' | 'next') => {
+    setCurrentMonth(prev => {
+      const newMonth = new Date(prev);
+      if (direction === 'prev') {
+        newMonth.setMonth(prev.getMonth() - 1);
+      } else {
+        newMonth.setMonth(prev.getMonth() + 1);
+      }
+      return newMonth;
+    });
+  };
+
+  const calendarDays = getDaysInMonth(currentMonth);
 
   const getTasksByTab = (tab: string) => {
     const now = new Date();
@@ -345,202 +379,179 @@ const tasks = apiTasks.map(mapApiTaskToLocal);
     }
   };
 
-const handleUpdateStatus = async (taskId: string, newStatus: Task['status']) => {
-  if (!useApi) {
-    toast.success('Task status updated');
-    return;
-  }
-
-  setIsUpdatingStatus(true);
-  try {
-    // Map frontend status to backend status - FIXED MAPPING
-    const backendStatusMap: Record<Task['status'], string> = {
-      'to-do': 'todo',
-      'in-progress': 'in_progress',
-      'blocked': 'blocked',
-      'done': 'done'
-    };
-
-    const backendStatus = backendStatusMap[newStatus];
-    
-    // Get the current task to preserve all fields
-    const currentTask = apiTasks.find(task => task.id.toString() === taskId);
-    if (!currentTask) {
-      throw new Error('Task not found');
-    }
-
-    console.log('Updating task status:', {
-      taskId,
-      frontendStatus: newStatus,
-      backendStatus,
-      currentTask
-    });
-
-    // Update only the status field, preserve all other fields
-    await taskApi.update(parseInt(taskId), {
-      title: currentTask.title,
-      description: currentTask.description,
-      priority: currentTask.priority,
-      status: backendStatus,
-      assigned_to: currentTask.assigned_to || currentTask.assignee_id,
-      due_date: currentTask.due_date
-    });
-
-    // Refresh tasks to get updated data
-    await fetchTasks();
-    
-    // Update selected task if it's the one being updated
-    if (selectedTask && selectedTask.id === taskId) {
-      const updatedTask = { ...selectedTask, status: newStatus };
-      setSelectedTask(updatedTask);
-      
-      // Also update in the apiTasks array
-      setApiTasks(prev => prev.map(task => 
-        task.id.toString() === taskId 
-          ? { ...task, status: backendStatus }
-          : task
-      ));
-    }
-
-    toast.success('Task status updated successfully');
-  } catch (error) {
-    console.error('Task status update error:', error);
-    if (error instanceof ApiError) {
-      toast.error(`Failed to update task status: ${error.message}`);
-    } else {
-      toast.error('Failed to update task status');
-    }
-  } finally {
-    setIsUpdatingStatus(false);
-  }
-};
-
-const handleAddTimeLog = async () => {
-  if (newTimeLog.hours === 0 && newTimeLog.minutes === 0) {
-    toast.error('Please enter time spent');
-    return;
-  }
-
-  if (!newTimeLog.description.trim()) {
-    toast.error('Please enter a description');
-    return;
-  }
-
-  if (!selectedTask) {
-    toast.error('No task selected');
-    return;
-  }
-
-  // Calculate total hours (hours + minutes as decimal)
-  const totalHours = newTimeLog.hours + (newTimeLog.minutes / 60);
-
-  if (useApi) {
-    try {
-      // Format date to YYYY-MM-DD (remove time part)
-      const formattedDate = new Date(newTimeLog.date).toISOString().split('T')[0];
-
-      // Get current week start date (Monday)
-      const today = new Date(formattedDate);
-      const dayOfWeek = today.getDay();
-      const diff = today.getDate() - dayOfWeek + (dayOfWeek === 0 ? -6 : 1);
-      const weekStartDate = new Date(today.setDate(diff));
-      const weekStartDateStr = weekStartDate.toISOString().split('T')[0];
-
-      // Get current timesheet for the week
-      let timesheet;
-      try {
-        timesheet = await timesheetApi.getWeekly(weekStartDateStr);
-      } catch (error) {
-        // If no timesheet exists, create a new one
-        timesheet = {
-          id: undefined,
-          user_id: user.id,
-          week_start_date: weekStartDateStr,
-          status: 'draft',
-          entries: []
-        };
-      }
-
-      // Prepare timesheet entry with proper field names and formatted date
-      const timesheetEntry = {
-        projectId: selectedTask.project_id || 1, // Use projectId (not project_id)
-        taskId: parseInt(selectedTask.id), // Use taskId (not task_id)
-        workDate: formattedDate, // Use formatted date without time
-        hours: totalHours,
-        note: newTimeLog.description
-      };
-
-      // Update timesheet entries - ensure we're sending the complete entries array
-      const updatedEntries = [
-        ...(timesheet.entries || []), 
-        timesheetEntry
-      ];
-
-      // Save timesheet with the complete structure
-      await timesheetApi.save({
-        weekStartDate: weekStartDateStr,
-        entries: updatedEntries
-      });
-
-      // Refresh time logs to show the new entry
-      await fetchTimeLogsForTask(selectedTask.id);
-
-      toast.success('Time logged successfully and saved to timesheet');
-    } catch (error) {
-      if (error instanceof ApiError) {
-        toast.error(`Failed to save time log: ${error.message}`);
-      } else {
-        console.error('Time log error:', error);
-        toast.error('Failed to save time log');
-      }
+  const handleUpdateStatus = async (taskId: string, newStatus: Task['status']) => {
+    if (!useApi) {
+      toast.success('Task status updated');
       return;
     }
-  }
 
-  // Reset form
-  setNewTimeLog({
-    date: new Date().toISOString().split('T')[0], // Ensure date is in YYYY-MM-DD format
-    hours: 0,
-    minutes: 0,
-    description: ''
-  });
-};
-
-// Update the handleDeleteTimeLog function in MyTasks.tsx
-const handleDeleteTimeLog = async (logId: string) => {
-  if (!selectedTask) {
-    toast.error('No task selected');
-    return;
-  }
-
-  // Confirm deletion
-  if (!window.confirm('Are you sure you want to delete this time entry?')) {
-    return;
-  }
-
-  if (useApi) {
+    setIsUpdatingStatus(true);
     try {
-      // Call the delete API
-      await timesheetApi.deleteEntry(logId);
+      const backendStatusMap: Record<Task['status'], string> = {
+        'to-do': 'todo',
+        'in-progress': 'in_progress',
+        'blocked': 'blocked',
+        'done': 'done'
+      };
+
+      const backendStatus = backendStatusMap[newStatus];
       
-      // Refresh time logs to reflect the deletion
-      await fetchTimeLogsForTask(selectedTask.id);
+      const currentTask = apiTasks.find(task => task.id.toString() === taskId);
+      if (!currentTask) {
+        throw new Error('Task not found');
+      }
+
+      console.log('Updating task status:', {
+        taskId,
+        frontendStatus: newStatus,
+        backendStatus,
+        currentTask
+      });
+
+      await taskApi.update(parseInt(taskId), {
+        title: currentTask.title,
+        description: currentTask.description,
+        priority: currentTask.priority,
+        status: backendStatus,
+        assigned_to: currentTask.assigned_to || currentTask.assignee_id,
+        due_date: currentTask.due_date
+      });
+
+      await fetchTasks();
       
-      toast.success('Time entry deleted successfully');
+      if (selectedTask && selectedTask.id === taskId) {
+        const updatedTask = { ...selectedTask, status: newStatus };
+        setSelectedTask(updatedTask);
+        
+        setApiTasks(prev => prev.map(task => 
+          task.id.toString() === taskId 
+            ? { ...task, status: backendStatus }
+            : task
+        ));
+      }
+
+      toast.success('Task status updated successfully');
     } catch (error) {
-      console.error('Failed to delete time entry:', error);
+      console.error('Task status update error:', error);
       if (error instanceof ApiError) {
-        toast.error(`Failed to delete time entry: ${error.message}`);
+        toast.error(`Failed to update task status: ${error.message}`);
       } else {
-        toast.error('Failed to delete time entry');
+        toast.error('Failed to update task status');
+      }
+    } finally {
+      setIsUpdatingStatus(false);
+    }
+  };
+
+  const handleAddTimeLog = async () => {
+    if (newTimeLog.hours === 0 && newTimeLog.minutes === 0) {
+      toast.error('Please enter time spent');
+      return;
+    }
+
+    if (!newTimeLog.description.trim()) {
+      toast.error('Please enter a description');
+      return;
+    }
+
+    if (!selectedTask) {
+      toast.error('No task selected');
+      return;
+    }
+
+    const totalHours = newTimeLog.hours + (newTimeLog.minutes / 60);
+
+    if (useApi) {
+      try {
+        const formattedDate = new Date(newTimeLog.date).toISOString().split('T')[0];
+
+        const today = new Date(formattedDate);
+        const dayOfWeek = today.getDay();
+        const diff = today.getDate() - dayOfWeek + (dayOfWeek === 0 ? -6 : 1);
+        const weekStartDate = new Date(today.setDate(diff));
+        const weekStartDateStr = weekStartDate.toISOString().split('T')[0];
+
+        let timesheet;
+        try {
+          timesheet = await timesheetApi.getWeekly(weekStartDateStr);
+        } catch (error) {
+          timesheet = {
+            id: undefined,
+            user_id: user.id,
+            week_start_date: weekStartDateStr,
+            status: 'draft',
+            entries: []
+          };
+        }
+
+        const timesheetEntry = {
+          projectId: selectedTask.project_id || 1,
+          taskId: parseInt(selectedTask.id),
+          workDate: formattedDate,
+          hours: totalHours,
+          note: newTimeLog.description
+        };
+
+        const updatedEntries = [
+          ...(timesheet.entries || []), 
+          timesheetEntry
+        ];
+
+        await timesheetApi.save({
+          weekStartDate: weekStartDateStr,
+          entries: updatedEntries
+        });
+
+        await fetchTimeLogsForTask(selectedTask.id);
+
+        toast.success('Time logged successfully and saved to timesheet');
+      } catch (error) {
+        if (error instanceof ApiError) {
+          toast.error(`Failed to save time log: ${error.message}`);
+        } else {
+          console.error('Time log error:', error);
+          toast.error('Failed to save time log');
+        }
+        return;
       }
     }
-  } else {
-    // Mock data deletion (for when API is not available)
-    setTimeLogs(prev => prev.filter(log => log.id !== logId));
-    toast.success('Time log deleted');
-  }
-};
+
+    setNewTimeLog({
+      date: new Date().toISOString().split('T')[0],
+      hours: 0,
+      minutes: 0,
+      description: ''
+    });
+  };
+
+  const handleDeleteTimeLog = async (logId: string) => {
+    if (!selectedTask) {
+      toast.error('No task selected');
+      return;
+    }
+
+    if (!window.confirm('Are you sure you want to delete this time entry?')) {
+      return;
+    }
+
+    if (useApi) {
+      try {
+        await timesheetApi.deleteEntry(logId);
+        await fetchTimeLogsForTask(selectedTask.id);
+        toast.success('Time entry deleted successfully');
+      } catch (error) {
+        console.error('Failed to delete time entry:', error);
+        if (error instanceof ApiError) {
+          toast.error(`Failed to delete time entry: ${error.message}`);
+        } else {
+          toast.error('Failed to delete time entry');
+        }
+      }
+    } else {
+      setTimeLogs(prev => prev.filter(log => log.id !== logId));
+      toast.success('Time log deleted');
+    }
+  };
 
   const getTotalTime = () => {
     const totalMinutes = timeLogs.reduce((total, log) => {
@@ -562,44 +573,6 @@ const handleDeleteTimeLog = async (logId: string) => {
 
   const isOverdue = (dueDate: string) => {
     return new Date(dueDate) < new Date() && new Date(dueDate).toDateString() !== new Date().toDateString();
-  };
-
-  const toggleDateExpansion = (date: string) => {
-    const newExpanded = new Set(expandedDates);
-    if (newExpanded.has(date)) {
-      newExpanded.delete(date);
-    } else {
-      newExpanded.add(date);
-    }
-    setExpandedDates(newExpanded);
-  };
-
-  const getDateDisplayText = (date: string) => {
-    const today = new Date().toDateString();
-    const tomorrow = new Date(Date.now() + 24 * 60 * 60 * 1000).toDateString();
-    const yesterday = new Date(Date.now() - 24 * 60 * 60 * 1000).toDateString();
-    
-    const taskDate = new Date(date).toDateString();
-    
-    if (taskDate === today) return 'Today';
-    if (taskDate === tomorrow) return 'Tomorrow';
-    if (taskDate === yesterday) return 'Yesterday';
-    
-    return new Date(date).toLocaleDateString('en-US', { 
-      weekday: 'long', 
-      month: 'short', 
-      day: 'numeric' 
-    });
-  };
-
-  const getDateBadgeVariant = (date: string) => {
-    const taskDate = new Date(date);
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    
-    if (taskDate < today) return 'destructive';
-    if (taskDate.getTime() === today.getTime()) return 'default';
-    return 'secondary';
   };
 
   const totalTime = getTotalTime();
@@ -690,13 +663,13 @@ const handleDeleteTimeLog = async (logId: string) => {
                   Current
                 </Button>
                 <Button
-                  variant={viewType === 'due-date' ? 'default' : 'ghost'}
+                  variant={viewType === 'calendar' ? 'default' : 'ghost'}
                   size="sm"
-                  onClick={() => setViewType('due-date')}
-                  className={`flex items-center gap-2 ${viewType === 'due-date' ? 'bg-black shadow-sm' : ''}`}
+                  onClick={() => setViewType('calendar')}
+                  className={`flex items-center gap-2 ${viewType === 'calendar' ? 'bg-black shadow-sm' : ''}`}
                 >
                   <Calendar className="w-4 h-4" />
-                  Due Date
+                  Calendar
                 </Button>
               </div>
             </div>
@@ -737,79 +710,82 @@ const handleDeleteTimeLog = async (logId: string) => {
             </Select>
           </div>
 
-          {viewType === 'due-date' ? (
+          {viewType === 'calendar' ? (
             <div className="space-y-4">
-              {sortedDueDates.map(date => (
-                <div key={date} className="border rounded-lg">
-                  <div 
-                    className="flex items-center justify-between p-4 bg-gray-50 cursor-pointer"
-                    onClick={() => toggleDateExpansion(date)}
-                  >
-                    <div className="flex items-center gap-3">
-                      <Badge variant={getDateBadgeVariant(date)}>
-                        {getDateDisplayText(date)}
-                      </Badge>
-                      <span className="text-sm text-gray-500">
-                        {tasksByDueDate[date].length} task{tasksByDueDate[date].length !== 1 ? 's' : ''}
-                      </span>
+              {/* Calendar Header */}
+              <div className="flex items-center justify-between">
+                <Button
+                  variant="outline"
+                  onClick={() => navigateMonth('prev')}
+                  className="h-8"
+                >
+                  Previous
+                </Button>
+                <h3 className="text-lg font-semibold">
+                  {currentMonth.toLocaleDateString('en-US', { month: 'long', year: 'numeric' })}
+                </h3>
+                <Button
+                  variant="outline"
+                  onClick={() => navigateMonth('next')}
+                  className="h-8"
+                >
+                  Next
+                </Button>
+              </div>
+
+              {/* Calendar Grid */}
+              <div className="border rounded-lg">
+                {/* Weekday Headers */}
+                <div className="grid grid-cols-7 bg-gray-50 border-b">
+                  {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map(day => (
+                    <div key={day} className="p-3 text-center text-sm font-medium text-gray-600">
+                      {day}
                     </div>
-                    {expandedDates.has(date) ? (
-                      <ChevronUp className="w-4 h-4 text-gray-400" />
-                    ) : (
-                      <ChevronDown className="w-4 h-4 text-gray-400" />
-                    )}
-                  </div>
-                  
-                  {expandedDates.has(date) && (
-                    <div className="space-y-2 p-4">
-                      {tasksByDueDate[date].map(task => (
-                        <div
-                          key={task.id}
-                          className="flex items-start justify-between gap-4 p-4 border rounded-lg hover:bg-gray-50 cursor-pointer"
-                          onClick={() => {
-                            setSelectedTask(task);
-                            setShowTaskDialog(true);
-                          }}
-                        >
-                          <div className="flex-1 min-w-0">
-                            <div className="flex items-center gap-2 mb-1">
-                              <p className="truncate">{task.title}</p>
-                              {isOverdue(task.dueDate) && (
-                                <AlertCircle className="w-4 h-4 text-red-500 shrink-0" />
-                              )}
-                            </div>
-                            <p className="text-sm text-gray-500 line-clamp-1">{task.description}</p>
-                            <p className="text-xs text-gray-400 mt-1">{task.project} • Assigned by {task.assignedBy}</p>
-                          </div>
-                          <div className="flex flex-col items-end gap-2 shrink-0">
-                            <div className="flex gap-2">
-                             <Badge variant={
-  task.priority === 'high' ? 'destructive' :
-  task.priority === 'medium' ? 'default' :
-  'secondary'
-}>
-  {capitalizeFirstLetter(task.priority)}
-</Badge>
-                              <Badge variant="outline">
-  {capitalizeWords(task.status.replace('-', ' '))}
-</Badge>
-                            </div>
-                            <div className={`flex items-center gap-1 text-xs ${
-                              isOverdue(task.dueDate) ? 'text-red-600' : 'text-gray-500'
-                            }`}>
-                              <Calendar className="w-3 h-3" />
-                              <span>Due {getDateDisplayText(task.dueDate)}</span>
-                            </div>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  )}
+                  ))}
                 </div>
-              ))}
-              {sortedDueDates.length === 0 && (
-                <p className="text-center text-gray-500 py-8">No tasks found</p>
-              )}
+
+                {/* Calendar Days */}
+                <div className="grid grid-cols-7 gap-px bg-gray-200">
+                  {calendarDays.map((day, index) => (
+                    <div
+                      key={index}
+                      className={`bg-white min-h-32 p-2 ${
+                        !day.isCurrentMonth ? 'bg-gray-50' : ''
+                      } ${day.isToday ? 'ring-2 ring-blue-500' : ''}`}
+                    >
+                      <div className={`text-sm font-medium mb-1 ${
+                        !day.isCurrentMonth ? 'text-gray-400' : 
+                        day.isToday ? 'text-blue-600' : 'text-gray-900'
+                      }`}>
+                        {day.date.getDate()}
+                      </div>
+                      
+                      {/* Tasks for this day */}
+                      <div className="space-y-1 max-h-20 overflow-y-auto">
+                        {day.tasks.map(task => (
+                          <div
+                            key={task.id}
+                            className="text-xs p-1 rounded cursor-pointer hover:bg-gray-100 border-l-2"
+                            style={{
+                              borderLeftColor: 
+                                task.priority === 'high' ? '#ef4444' :
+                                task.priority === 'medium' ? '#f59e0b' : '#10b981'
+                            }}
+                            onClick={() => handleTaskSelect(task)}
+                          >
+                            <div className="font-medium truncate">{task.title}</div>
+                            <div className="flex items-center gap-1 text-gray-500">
+                              <Badge variant="outline" className="text-xs h-4">
+                                {capitalizeWords(task.status.replace('-', ' '))}
+                              </Badge>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
             </div>
           ) : (
             <Tabs defaultValue="all" className="w-full rounded-2xl">
@@ -827,34 +803,30 @@ const handleDeleteTimeLog = async (logId: string) => {
                     <div
                       key={task.id}
                       className="flex items-start justify-between gap-4 p-4 border rounded-lg hover:bg-gray-50 cursor-pointer"
-                      onClick={() => {
-                        setSelectedTask(task);
-                        setShowTaskDialog(true);
-                      }}
+                      onClick={() => handleTaskSelect(task)}
                     >
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-2 mb-1">
-                         
                           <p className="truncate">{capitalizeWords(task.title)}</p>
                           {isOverdue(task.dueDate) && (
                             <AlertCircle className="w-4 h-4 text-red-500 shrink-0" />
                           )}
                         </div>
-                   <p className="text-sm text-gray-500 line-clamp-1">{capitalizeWords(task.description)}</p>
+                        <p className="text-sm text-gray-500 line-clamp-1">{capitalizeWords(task.description)}</p>
                         <p className="text-xs text-gray-400 mt-1">{task.project} • Assigned by {task.assignedBy}</p>
                       </div>
                       <div className="flex flex-col items-end gap-2 shrink-0">
                         <div className="flex gap-2">
-                      <Badge variant={
-  task.priority === 'high' ? 'destructive' :
-  task.priority === 'medium' ? 'default' :
-  'secondary'
-}>
-  {capitalizeFirstLetter(task.priority)}
-</Badge>
-                        <Badge variant="outline">
-  {capitalizeWords(task.status.replace('-', ' '))}
-</Badge>
+                          <Badge variant={
+                            task.priority === 'high' ? 'destructive' :
+                            task.priority === 'medium' ? 'default' :
+                            'secondary'
+                          }>
+                            {capitalizeFirstLetter(task.priority)}
+                          </Badge>
+                          <Badge variant="outline">
+                            {capitalizeWords(task.status.replace('-', ' '))}
+                          </Badge>
                         </div>
                         <div className={`flex items-center gap-1 text-xs ${
                           isOverdue(task.dueDate) ? 'text-red-600' : 'text-gray-500'

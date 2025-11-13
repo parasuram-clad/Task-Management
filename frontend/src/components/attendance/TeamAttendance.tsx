@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Search, Download, CheckCircle, XCircle, Clock, Edit ,Users} from 'lucide-react';
+import { Search, Download, CheckCircle, XCircle, Clock, Edit ,Users, TrendingUp, TrendingDown} from 'lucide-react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../ui/card';
 import { Input } from '../ui/input';
 import { Button } from '../ui/button';
@@ -489,43 +489,46 @@ const handleEditAttendance = async (attendanceData: any) => {
         <p className="text-gray-500">Monitor and manage your team's attendance</p>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-        <Card className="p-6 bg-gradient-to-br from-blue-50 to-blue-100 border-blue-200 shadow-sm hover:shadow-md transition-shadow">
-          <div className="flex items-center justify-between">
-            <div className="space-y-2">
-              <p className="text-sm font-medium text-blue-700 uppercase tracking-wide">Total Team</p>
-              <p className="text-3xl font-bold text-blue-900">{stats.total}</p>
-            </div>
-            <div className="p-3 bg-blue rounded-full" style={{backgroundColor:'blue'}}>
-              <Users className="w-6 h-6 text-white" />
-            </div>
-          </div>
-        </Card>
-
-        <Card className="p-6 bg-gradient-to-br from-green-50 to-green-100 border-green-200 shadow-sm hover:shadow-md transition-shadow">
-          <div className="flex items-center justify-between">
-            <div className="space-y-2">
-              <p className="text-sm font-medium text-green-700 uppercase tracking-wide">Present Today</p>
-              <p className="text-3xl font-bold text-green-900">{stats.present}</p>
-            </div>
-            <div className="p-3 bg-green-500 rounded-full">
-              <CheckCircle className="w-6 h-6 text-white" />
-            </div>
-          </div>
-        </Card>
-
-        <Card className="p-6 bg-gradient-to-br from-red-50 to-red-100 border-red-200 shadow-sm hover:shadow-md transition-shadow">
-          <div className="flex items-center justify-between">
-            <div className="space-y-2">
-              <p className="text-sm font-medium text-red-700 uppercase tracking-wide">Absent</p>
-              <p className="text-3xl font-bold text-red-900">{stats.absent}</p>
-            </div>
-            <div className="p-3 bg-red-500 rounded-full">
-              <XCircle className="w-6 h-6 text-white" />
-            </div>
-          </div>
-        </Card>
+<div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+  {/* Total Team Card */}
+  <div className="border-l-4 border-blue-500 bg-white rounded-r-lg p-4 shadow-sm hover:shadow-md transition-shadow">
+    <div className="flex items-center gap-3">
+      <div className="p-2 bg-blue-100 rounded-lg">
+        <Users className="w-6 h-6 text-blue-600" />
       </div>
+      <div>
+        <p className="text-xs text-gray-500 uppercase tracking-wide">Total Team</p>
+        <p className="text-2xl font-bold text-gray-900">{stats.total}</p>
+      </div>
+    </div>
+  </div>
+
+  {/* Present Today Card */}
+  <div className="border-l-4 border-green-500 bg-white rounded-r-lg p-4 shadow-sm hover:shadow-md transition-shadow">
+    <div className="flex items-center gap-3">
+      <div className="p-2 bg-green-100 rounded-lg">
+        <CheckCircle className="w-6 h-6 text-green-600" />
+      </div>
+      <div>
+        <p className="text-xs text-gray-500 uppercase tracking-wide">Present Today</p>
+        <p className="text-2xl font-bold text-gray-900">{stats.present}</p>
+      </div>
+    </div>
+  </div>
+
+  {/* Absent Card */}
+  <div className="border-l-4 border-red-500 bg-white rounded-r-lg p-4 shadow-sm hover:shadow-md transition-shadow">
+    <div className="flex items-center gap-3">
+      <div className="p-2 bg-red-100 rounded-lg">
+        <XCircle className="w-6 h-6 text-red-600" />
+      </div>
+      <div>
+        <p className="text-xs text-gray-500 uppercase tracking-wide">Absent</p>
+        <p className="text-2xl font-bold text-gray-900">{stats.absent}</p>
+      </div>
+    </div>
+  </div>
+</div>
 
       <Card>
         <CardHeader>

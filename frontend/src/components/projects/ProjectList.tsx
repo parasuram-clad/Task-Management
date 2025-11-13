@@ -1,13 +1,23 @@
 import { useState, useEffect } from 'react';
 import { 
- 
+  Search, 
+  Plus, 
+  FolderKanban, 
+  Users, 
+  Calendar, 
+  TrendingUp,
   Activity,
   Target,
   AlertCircle,
- 
-  Clock 
+  CheckCircle,
+  AlertTriangle,
+  Clock,
+  Grid3X3,
+  List,
+  Filter,
+  MoreHorizontal,
+  Eye
 } from 'lucide-react';
-import { Search, Plus, FolderKanban, Users, Calendar, TrendingUp ,CheckCircle,AlertTriangle} from 'lucide-react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../ui/card';
 import { Input } from '../ui/input';
 import { Button } from '../ui/button';
@@ -17,10 +27,10 @@ import { Progress } from '../ui/progress';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '../ui/dialog';
 import { Label } from '../ui/label';
 import { Textarea } from '../ui/textarea';
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '../ui/dropdown-menu';
 import { toast } from 'sonner';
 import { User } from '../../App';
 import { projectApi, Project as ApiProject, employeeApi, Employee } from '../../services/api';
-import { apiConfig } from '../../services/api-config';
 import { ApiError } from '../../services/api-client';
 import { useNavigate } from 'react-router-dom';
 
@@ -41,20 +51,23 @@ interface Project {
   health: 'green' | 'yellow' | 'red';
   teamSize: number;
   totalHours: number;
+  description?: string;
 }
+
+type ViewMode = 'grid' | 'list';
 
 export function ProjectList({ user }: ProjectListProps) {
   const navigate = useNavigate();
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
-  const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
+  const [viewMode, setViewMode] = useState<ViewMode>('grid');
   const [showCreateDialog, setShowCreateDialog] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [isCreating, setIsCreating] = useState(false);
   const [apiProjects, setApiProjects] = useState<ApiProject[]>([]);
   const [companyUsers, setCompanyUsers] = useState<Employee[]>([]);
   const [apiError, setApiError] = useState<string | null>(null);
-  const useApi = apiConfig.hasBaseUrl();
+  
   const [newProject, setNewProject] = useState({
     name: '',
     client: '',
@@ -67,11 +80,9 @@ export function ProjectList({ user }: ProjectListProps) {
 
   // Fetch projects and company users from API
   useEffect(() => {
-    if (useApi) {
-      fetchProjects();
-      fetchCompanyUsers();
-    }
-  }, [useApi]);
+    fetchProjects();
+    fetchCompanyUsers();
+  }, []);
 
   const fetchProjects = async () => {
     setIsLoading(true);
@@ -100,17 +111,57 @@ export function ProjectList({ user }: ProjectListProps) {
     }
   };
 
-  // Map API projects to local Project format
+  // Map API projects to local Project format with real data
   const mapApiProjectToLocal = (apiProject: ApiProject): Project => {
     const startDate = new Date(apiProject.start_date);
     const endDate = new Date(apiProject.end_date);
     
+    // Calculate real progress based on task completion
+    let completion = 0;
+    if (apiProject.tasks && apiProject.tasks.length > 0) {
+      const completedTasks = apiProject.tasks.filter(task => task.status === 'done').length;
+      completion = Math.round((completedTasks / apiProject.tasks.length) * 100);
+    } else if (apiProject.total_tasks && apiProject.completed_tasks) {
+      // Use the aggregated task counts from the list query
+      completion = apiProject.total_tasks > 0 
+        ? Math.round((apiProject.completed_tasks / apiProject.total_tasks) * 100)
+        : 0;
+    }
+
+    // If project is completed, set to 100%
+    if (apiProject.status === 'completed') {
+      completion = 100;
+    }
+    
+    // Determine health based on progress and status
+    let health: 'green' | 'yellow' | 'red' = 'green';
+    if (apiProject.status === 'on-hold') {
+      health = 'yellow';
+    } else if (completion > 80 && apiProject.status !== 'completed') {
+      health = 'red';
+    } else if (completion > 60 && apiProject.status !== 'completed') {
+      health = 'yellow';
+    }
+
+    // Calculate total hours from project data
+    const totalHours = apiProject.members?.reduce((sum, member) => sum + (member.total_hours || 0), 0) || 0;
+    
+    // Get real team member count
+    const teamSize = apiProject.member_count || apiProject.members?.length || 0;
+    
+    // Capitalize manager name
+    const capitalizeName = (name: string) => {
+      return name.split(' ').map(word => 
+        word.charAt(0).toUpperCase() + word.slice(1).toLowerCase()
+      ).join(' ');
+    };
+
     return {
       id: apiProject.id.toString(),
       name: apiProject.name,
       client: apiProject.client_name || '',
-      manager: apiProject.manager_name || 'Unassigned',
-      managerId: apiProject.manager_id,
+      manager: apiProject.manager_name ? capitalizeName(apiProject.manager_name) : 'Unassigned',
+      managerId: apiProject.manager_id || 0,
       startDate: startDate.toLocaleDateString('en-IN', { 
         day: 'numeric', 
         month: 'short', 
@@ -122,14 +173,14 @@ export function ProjectList({ user }: ProjectListProps) {
         year: 'numeric' 
       }),
       status: apiProject.status as 'active' | 'on-hold' | 'completed',
-      completion: 50, // Default value - you can calculate based on tasks
-      health: 'green' as const, // Default value
-      teamSize: apiProject.members?.length || 0,
-      totalHours: 0, // Would need additional API data
+      completion: completion,
+      health: health,
+      teamSize: teamSize,
+      totalHours: totalHours,
+      description: apiProject.description
     };
   };
 
-  // Use API projects only
   const projects = apiProjects.map(mapApiProjectToLocal);
 
   const filteredProjects = projects.filter(project => {
@@ -147,12 +198,37 @@ export function ProjectList({ user }: ProjectListProps) {
   };
 
   const getHealthIndicator = (health: Project['health']) => {
+    const config = {
+      green: { color: 'bg-green-500', tooltip: 'On Track' },
+      yellow: { color: 'bg-yellow-500', tooltip: 'Needs Attention' },
+      red: { color: 'bg-red-500', tooltip: 'At Risk' }
+    };
+    
     return (
-      <div className={`w-3 h-3 rounded-full ${
-        health === 'green' ? 'bg-green-500' :
-        health === 'yellow' ? 'bg-yellow-500' :
-        'bg-red-500'
-      }`} />
+      <div className="relative group">
+        <div className={`w-3 h-3 rounded-full ${config[health].color}`} />
+        <div className="absolute bottom-full left-1/2 transform -translate-x-1/2 mb-2 hidden group-hover:block bg-gray-900 text-white text-xs rounded py-1 px-2 whitespace-nowrap z-10">
+          {config[health].tooltip}
+          <div className="absolute top-full left-1/2 transform -translate-x-1/2 border-4 border-transparent border-t-gray-900"></div>
+        </div>
+      </div>
+    );
+  };
+
+  const getStatusBadge = (status: Project['status']) => {
+    const config = {
+      active: { variant: 'default' as const, class: 'bg-green-100 text-green-800 border-green-200' },
+      completed: { variant: 'secondary' as const, class: 'bg-blue-100 text-blue-800 border-blue-200' },
+      'on-hold': { variant: 'outline' as const, class: 'bg-yellow-100 text-yellow-800 border-yellow-200' }
+    };
+    
+    return (
+      <Badge variant={config[status].variant} className={config[status].class}>
+        {status === 'active' && <div className="w-2 h-2 rounded-full bg-green-500 mr-1 animate-pulse" />}
+        {status === 'completed' && <CheckCircle className="w-3 h-3 mr-1" />}
+        {status === 'on-hold' && <AlertTriangle className="w-3 h-3 mr-1" />}
+        {status.charAt(0).toUpperCase() + status.slice(1)}
+      </Badge>
     );
   };
 
@@ -162,43 +238,181 @@ export function ProjectList({ user }: ProjectListProps) {
       return;
     }
 
-    if (useApi) {
-      setIsCreating(true);
-      try {
-        const projectData = {
-          name: newProject.name,
-          description: newProject.description || undefined,
-          clientName: newProject.client || undefined,
-          managerId: parseInt(newProject.managerId),
-          startDate: newProject.startDate,
-          endDate: newProject.endDate,
-        };
+    setIsCreating(true);
+    try {
+      const projectData = {
+        name: newProject.name,
+        description: newProject.description || undefined,
+        clientName: newProject.client || undefined,
+        managerId: parseInt(newProject.managerId),
+        startDate: newProject.startDate,
+        endDate: newProject.endDate,
+        status: newProject.status,
+      };
 
-        await projectApi.create(projectData);
-        toast.success('Project created successfully');
-        
-        // Refresh projects list
-        await fetchProjects();
-        
-        setShowCreateDialog(false);
-        setNewProject({
-          name: '',
-          client: '',
-          description: '',
-          startDate: '',
-          endDate: '',
-          managerId: '',
-          status: 'active',
-        });
-      } catch (error) {
-        if (error instanceof ApiError) {
-          toast.error(`Failed to create project: ${error.message}`);
-        }
-      } finally {
-        setIsCreating(false);
+      await projectApi.create(projectData);
+      toast.success('Project created successfully');
+      
+      await fetchProjects();
+      
+      setShowCreateDialog(false);
+      setNewProject({
+        name: '',
+        client: '',
+        description: '',
+        startDate: '',
+        endDate: '',
+        managerId: '',
+        status: 'active',
+      });
+    } catch (error) {
+      if (error instanceof ApiError) {
+        toast.error(`Failed to create project: ${error.message}`);
       }
+    } finally {
+      setIsCreating(false);
     }
   };
+
+  const handleProjectClick = (projectId: string) => {
+    navigate(`/projects/${projectId}`);
+  };
+
+  // Grid View Component with Real Data
+  const GridView = () => (
+    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+      {filteredProjects.map(project => (
+        <Card
+          key={project.id}
+          className="hover:shadow-md transition-all duration-300 cursor-pointer border border-gray-200 hover:border-gray-300 h-full"
+          onClick={() => handleProjectClick(project.id)}
+        >
+          <CardHeader className="pb-3">
+            <div className="flex items-start justify-between gap-2">
+              <div className="flex-1 min-w-0">
+                <CardTitle className="text-lg font-semibold text-gray-900 truncate">
+                  {project.name}
+                </CardTitle>
+                {project.client && (
+                  <CardDescription className="text-sm text-gray-600 mt-1 truncate">
+                    {project.client}
+                  </CardDescription>
+                )}
+              </div>
+              {getHealthIndicator(project.health)}
+            </div>
+          </CardHeader>
+          
+          <CardContent className="space-y-4">
+            {/* Real Progress Bar based on task completion */}
+            <div className="space-y-2">
+              <div className="flex justify-between text-sm">
+                <span className="text-gray-600 font-medium">Progress</span>
+                <span className="font-semibold text-gray-900">{project.completion}%</span>
+              </div>
+              <Progress value={project.completion} className="h-2" />
+            </div>
+
+            {/* Real Team Members Count */}
+            <div className="flex items-center justify-between text-sm">
+              <div className="flex items-center gap-4">
+                <div className="flex items-center gap-1 text-gray-600">
+                  <Users className="w-4 h-4" />
+                  <span className="font-medium">{project.teamSize} {project.teamSize === 1 ? 'member' : 'members'}</span>
+                </div>
+                <div className="flex items-center gap-1 text-gray-600">
+                  <Clock className="w-4 h-4" />
+                  <span className="font-medium">{project.totalHours}h</span>
+                </div>
+              </div>
+            </div>
+
+            {/* Real Project Dates */}
+            <div className="flex items-center gap-2 text-sm text-gray-500 bg-gray-50 rounded-lg p-2">
+              <Calendar className="w-4 h-4" />
+              <span className="font-medium">{project.startDate} - {project.endDate}</span>
+            </div>
+
+            {/* Status and Capitalized Manager Name */}
+            <div className="flex justify-between items-center pt-2 border-t border-gray-100">
+              {getStatusBadge(project.status)}
+              <span className="text-xs text-gray-500 font-medium">By: {project.manager}</span>
+            </div>
+          </CardContent>
+        </Card>
+      ))}
+    </div>
+  );
+
+  // List View Component with Real Data
+  const ListView = () => (
+    <div className="space-y-4">
+      {filteredProjects.map(project => (
+        <Card
+          key={project.id}
+          className="hover:shadow-md transition-all duration-300 cursor-pointer border border-gray-200 hover:border-gray-300"
+          onClick={() => handleProjectClick(project.id)}
+        >
+          <CardContent className="p-6">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-4 flex-1">
+                <div className="flex items-center gap-3 min-w-0 flex-1">
+                  {getHealthIndicator(project.health)}
+                  <div className="min-w-0 flex-1">
+                    <h3 className="font-semibold text-gray-900 truncate">
+                      {project.name}
+                    </h3>
+                    {project.client && (
+                      <p className="text-sm text-gray-600 truncate">{project.client}</p>
+                    )}
+                  </div>
+                </div>
+                
+                <div className="flex items-center gap-6 text-sm text-gray-600">
+                  <div className="text-center">
+                    <div className="font-semibold text-gray-900">{project.teamSize}</div>
+                    <div className="text-xs text-gray-500">Members</div>
+                  </div>
+                  <div className="text-center">
+                    <div className="font-semibold text-gray-900">{project.totalHours}h</div>
+                    <div className="text-xs text-gray-500">Hours</div>
+                  </div>
+                  <div className="w-32">
+                    <div className="flex justify-between text-xs mb-1">
+                      <span>Progress</span>
+                      <span className="font-semibold">{project.completion}%</span>
+                    </div>
+                    <Progress value={project.completion} className="h-2" />
+                  </div>
+                </div>
+              </div>
+              
+              <div className="flex items-center gap-4 ml-6">
+                <div className="text-right">
+                  <div className="text-sm text-gray-600 mb-1">{project.startDate} - {project.endDate}</div>
+                  <div className="text-xs text-gray-500">By: {project.manager}</div>
+                </div>
+                {getStatusBadge(project.status)}
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button variant="ghost" size="sm" className="opacity-0 group-hover:opacity-100 transition-opacity">
+                      <MoreHorizontal className="w-4 h-4" />
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end">
+                    <DropdownMenuItem onClick={() => handleProjectClick(project.id)}>
+                      <Eye className="w-4 h-4 mr-2" />
+                      View Details
+                    </DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      ))}
+    </div>
+  );
 
   return (
     <div className="p-6 space-y-6">
@@ -207,9 +421,10 @@ export function ProjectList({ user }: ProjectListProps) {
           <h1 className="text-3xl font-bold tracking-tight">Projects</h1>
           <p className="text-gray-500">Manage and track all projects</p>
           {apiError && (
-            <p className="text-sm text-yellow-600 mt-1">
+            <div className="flex items-center gap-2 text-sm text-amber-600 mt-2 bg-amber-50 px-3 py-2 rounded-lg border border-amber-200">
+              <AlertCircle className="w-4 h-4" />
               {apiError}
-            </p>
+            </div>
           )}
         </div>
         {(user.role === 'admin' || user.role === 'manager' || user.role === 'hr') && (
@@ -220,83 +435,84 @@ export function ProjectList({ user }: ProjectListProps) {
         )}
       </div>
 
-<div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-  {/* Total Projects Card */}
-  <Card className="stats-card total-projects">
-    <CardContent className="p-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <p className="stats-label">Total Projects</p>
-          <p className="stats-number">{stats.total}</p>
-        </div>
-        <div className="stats-icon-container">
-          <FolderKanban className="stats-icon total-icon" />
-        </div>
-      </div>
-      <div className="stats-footer">
-        <Calendar className="stats-footer-icon" />
-        <p className="stats-footer-text">All time projects</p>
-      </div>
-    </CardContent>
-  </Card>
+      {/* Stats Cards with Real Data */}
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+        {/* Total Projects Card */}
+        <Card className="bg-white/80 backdrop-blur-sm border border-white/20 rounded-xl p-6 shadow-lg hover:shadow-xl transition-all duration-300">
+          <CardContent className="p-0">
+            <div className="flex items-center justify-between mb-4">
+              <div>
+                <p className="text-xs font-semibold text-gray-600 uppercase tracking-wide">Total Projects</p>
+                <p className="text-2xl font-bold text-gray-900">{stats.total}</p>
+              </div>
+              <div className="p-3 bg-blue-500/10 rounded-xl">
+                <FolderKanban className="w-6 h-6 text-blue-600" />
+              </div>
+            </div>
+            <div className="flex items-center gap-2 text-xs text-gray-500">
+              <Calendar className="w-4 h-4" />
+              <span>All time projects</span>
+            </div>
+          </CardContent>
+        </Card>
 
-  {/* Active Projects Card */}
-  <Card className="stats-card active-projects">
-    <CardContent className="p-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <p className="stats-label">Active Projects</p>
-          <p className="stats-number">{stats.active}</p>
-        </div>
-        <div className="stats-icon-container">
-          <Activity className="stats-icon active-icon" />
-        </div>
-      </div>
-      <div className="stats-footer">
-        <Clock className="stats-footer-icon" />
-        <p className="stats-footer-text">Currently running</p>
-      </div>
-    </CardContent>
-  </Card>
+        {/* Active Projects Card */}
+        <Card className="bg-white/80 backdrop-blur-sm border border-white/20 rounded-xl p-6 shadow-lg hover:shadow-xl transition-all duration-300">
+          <CardContent className="p-0">
+            <div className="flex items-center justify-between mb-4">
+              <div>
+                <p className="text-xs font-semibold text-gray-600 uppercase tracking-wide">Active Projects</p>
+                <p className="text-2xl font-bold text-gray-900">{stats.active}</p>
+              </div>
+              <div className="p-3 bg-green-500/10 rounded-xl">
+                <Activity className="w-6 h-6 text-green-600" />
+              </div>
+            </div>
+            <div className="flex items-center gap-2 text-xs text-gray-500">
+              <Clock className="w-4 h-4" />
+              <span>Currently running</span>
+            </div>
+          </CardContent>
+        </Card>
 
-  {/* On Track Card */}
-  <Card className="stats-card on-track">
-    <CardContent className="p-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <p className="stats-label">On Track</p>
-          <p className="stats-number">{stats.onTrack}</p>
-        </div>
-        <div className="stats-icon-container">
-          <Target className="stats-icon on-track-icon" />
-        </div>
-      </div>
-      <div className="stats-footer">
-        <TrendingUp className="stats-footer-icon" />
-        <p className="stats-footer-text">Meeting deadlines</p>
-      </div>
-    </CardContent>
-  </Card>
+        {/* On Track Card */}
+        <Card className="bg-white/80 backdrop-blur-sm border border-white/20 rounded-xl p-6 shadow-lg hover:shadow-xl transition-all duration-300">
+          <CardContent className="p-0">
+            <div className="flex items-center justify-between mb-4">
+              <div>
+                <p className="text-xs font-semibold text-gray-600 uppercase tracking-wide">On Track</p>
+                <p className="text-2xl font-bold text-gray-900">{stats.onTrack}</p>
+              </div>
+              <div className="p-3 bg-emerald-500/10 rounded-xl">
+                <Target className="w-6 h-6 text-emerald-600" />
+              </div>
+            </div>
+            <div className="flex items-center gap-2 text-xs text-gray-500">
+              <TrendingUp className="w-4 h-4" />
+              <span>Meeting deadlines</span>
+            </div>
+          </CardContent>
+        </Card>
 
-  {/* At Risk Card */}
-  <Card className="stats-card at-risk">
-    <CardContent className="p-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <p className="stats-label">At Risk</p>
-          <p className="stats-number">{stats.atRisk}</p>
-        </div>
-        <div className="stats-icon-container">
-          <AlertCircle className="stats-icon at-risk-icon" />
-        </div>
+        {/* At Risk Card */}
+        <Card className="bg-white/80 backdrop-blur-sm border border-white/20 rounded-xl p-6 shadow-lg hover:shadow-xl transition-all duration-300">
+          <CardContent className="p-0">
+            <div className="flex items-center justify-between mb-4">
+              <div>
+                <p className="text-xs font-semibold text-gray-600 uppercase tracking-wide">At Risk</p>
+                <p className="text-2xl font-bold text-gray-900">{stats.atRisk}</p>
+              </div>
+              <div className="p-3 bg-amber-500/10 rounded-xl">
+                <AlertCircle className="w-6 h-6 text-amber-600" />
+              </div>
+            </div>
+            <div className="flex items-center gap-2 text-xs text-gray-500">
+              <AlertTriangle className="w-4 h-4" />
+              <span>Need attention</span>
+            </div>
+          </CardContent>
+        </Card>
       </div>
-      <div className="stats-footer">
-        <AlertTriangle className="stats-footer-icon" />
-        <p className="stats-footer-text">Need attention</p>
-      </div>
-    </CardContent>
-  </Card>
-</div>
 
       <Card>
         <CardHeader>
@@ -307,14 +523,18 @@ export function ProjectList({ user }: ProjectListProps) {
                 variant={viewMode === 'grid' ? 'default' : 'outline'}
                 size="sm"
                 onClick={() => setViewMode('grid')}
+                className="gap-2"
               >
+                <Grid3X3 className="w-4 h-4" />
                 Grid
               </Button>
               <Button
                 variant={viewMode === 'list' ? 'default' : 'outline'}
                 size="sm"
                 onClick={() => setViewMode('list')}
+                className="gap-2"
               >
+                <List className="w-4 h-4" />
                 List
               </Button>
             </div>
@@ -346,7 +566,10 @@ export function ProjectList({ user }: ProjectListProps) {
 
           {isLoading ? (
             <div className="flex justify-center py-8">
-              <p>Loading projects...</p>
+              <div className="flex items-center gap-3 text-gray-600">
+                <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-blue-600"></div>
+                <p className="text-lg">Loading projects...</p>
+              </div>
             </div>
           ) : filteredProjects.length === 0 ? (
             <div className="flex flex-col items-center justify-center py-12 text-center">
@@ -366,102 +589,9 @@ export function ProjectList({ user }: ProjectListProps) {
               )}
             </div>
           ) : viewMode === 'grid' ? (
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-              {filteredProjects.map(project => (
-                <Card
-                  key={project.id}
-                  className="hover:shadow-lg transition-shadow cursor-pointer"
-                  onClick={() => navigate(`/projects/${project.id}`)}
-                >
-                  <CardHeader>
-                    <div className="flex items-start justify-between gap-2">
-                      <div className="flex-1 min-w-0">
-                        <CardTitle className="text-base truncate">{project.name}</CardTitle>
-                        {project.client && (
-                          <CardDescription className="truncate">{project.client}</CardDescription>
-                        )}
-                      </div>
-                      {getHealthIndicator(project.health)}
-                    </div>
-                  </CardHeader>
-                  <CardContent className="space-y-3">
-                    <div className="space-y-1">
-                      <div className="flex justify-between text-sm">
-                        <span className="text-gray-500">Progress</span>
-                        <span>{project.completion}%</span>
-                      </div>
-                      <Progress value={project.completion} />
-                    </div>
-
-                    <div className="flex items-center gap-4 text-sm text-gray-500">
-                      <div className="flex items-center gap-1">
-                        <Users className="w-4 h-4" />
-                        <span>{project.teamSize}</span>
-                      </div>
-                      <div className="flex items-center gap-1">
-                        <TrendingUp className="w-4 h-4" />
-                        <span>{project.totalHours}h</span>
-                      </div>
-                    </div>
-
-                    <div className="flex items-center gap-2 text-xs text-gray-500">
-                      <Calendar className="w-3 h-3" />
-                      <span>{project.startDate} - {project.endDate}</span>
-                    </div>
-
-                    <Badge variant={
-                      project.status === 'active' ? 'default' :
-                      project.status === 'completed' ? 'secondary' :
-                      'outline'
-                    }>
-                      {project.status}
-                    </Badge>
-                  </CardContent>
-                </Card>
-              ))}
-            </div>
+            <GridView />
           ) : (
-            <div className="space-y-2">
-              {filteredProjects.map(project => (
-                <div
-                  key={project.id}
-                  className="flex items-center gap-4 p-4 border rounded-lg hover:bg-gray-50 cursor-pointer"
-                  onClick={() => navigate(`/projects/${project.id}`)}
-                >
-                  {getHealthIndicator(project.health)}
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2">
-                      <p className="font-medium truncate">{project.name}</p>
-                      <Badge variant={
-                        project.status === 'active' ? 'default' :
-                        project.status === 'completed' ? 'secondary' :
-                        'outline'
-                      }>
-                        {project.status}
-                      </Badge>
-                    </div>
-                    <p className="text-sm text-gray-500">{project.client} • {project.manager}</p>
-                  </div>
-                  <div className="flex items-center gap-6 text-sm">
-                    <div className="w-32">
-                      <div className="flex justify-between text-xs mb-1">
-                        <span className="text-gray-500">Progress</span>
-                        <span>{project.completion}%</span>
-                      </div>
-                      <Progress value={project.completion} />
-                    </div>
-                    <div className="flex items-center gap-1 text-gray-500">
-                      <Users className="w-4 h-4" />
-                      <span>{project.teamSize}</span>
-                    </div>
-                    <div className="flex items-center gap-1 text-gray-500">
-                      <TrendingUp className="w-4 h-4" />
-                      <span>{project.totalHours}h</span>
-                    </div>
-                  </div>
-                </div>
-              ))}
-            </div>
+            <ListView />
           )}
         </CardContent>
       </Card>
