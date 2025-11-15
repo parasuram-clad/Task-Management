@@ -485,7 +485,7 @@ const handleEditAttendance = async (attendanceData: any) => {
   return (
     <div className="p-6 space-y-6">
       <div>
-        <h1>Team Attendance</h1>
+         <h1 className="text-3xl font-bold tracking-tight">Team Attendance</h1>
         <p className="text-gray-500">Monitor and manage your team's attendance</p>
       </div>
 

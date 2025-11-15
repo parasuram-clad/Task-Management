@@ -16,7 +16,11 @@ import {
   Target,
   AlertCircle,
   Eye,
-  GripVertical
+  GripVertical,
+  ChevronDown,
+  ChevronRight,
+  List,
+  Kanban
 } from 'lucide-react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../ui/card';
 import { Button } from '../ui/button';
@@ -27,6 +31,8 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Label } from '../ui/label';
 import { Textarea } from '../ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../ui/select';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '../ui/tabs';
+import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '../ui/accordion';
 import { toast } from 'sonner';
 import { projectApi, taskApi, Project as ApiProject, Task, employeeApi, Employee } from '../../services/api';
 import { ApiError } from '../../services/api-client';
@@ -59,17 +65,30 @@ interface ProjectTasksProps {
   user: any;
 }
 
+// Update the ProjectTask interface
 interface ProjectTask extends Task {
   assignee_name?: string;
   assignee_id?: number;
+  has_publish_date?: boolean;
+  publish_date?: string;
 }
+
 
 // Update KANBAN_COLUMNS to match backend status values
 const KANBAN_COLUMNS = [
   { id: 'todo', title: 'To Do', color: 'bg-gray-100', status: 'todo' },
   { id: 'in_progress', title: 'In Progress', color: 'bg-blue-50', status: 'in_progress' },
+  { id: 'done', title: 'Done', color: 'bg-green-50', status: 'done' },
   { id: 'blocked', title: 'Blocked', color: 'bg-red-50', status: 'blocked' },
-  { id: 'done', title: 'Done', color: 'bg-green-50', status: 'done' }
+];
+
+// Tab view status options
+const TAB_STATUS_OPTIONS = [
+  { id: 'all', title: 'All Tasks', status: 'all' },
+  { id: 'todo', title: 'To Do', status: 'todo' },
+  { id: 'in_progress', title: 'In Progress', status: 'in_progress' },
+  { id: 'blocked', title: 'Blocked', status: 'blocked' },
+  { id: 'done', title: 'Done', status: 'done' },
 ];
 
 // Helper function to map frontend display names to backend status values
@@ -97,6 +116,12 @@ const getFrontendStatus = (backendStatus: string): string => {
 
 // Helper function to capitalize text
 const capitalize = (text: string): string => {
+  return text.charAt(0).toUpperCase() + text.slice(1);
+};
+
+// Helper function to capitalize display text
+const capitalizeDisplayText = (text: string): string => {
+  if (!text) return text;
   return text.charAt(0).toUpperCase() + text.slice(1);
 };
 
@@ -175,12 +200,12 @@ function SortableTaskCard({
   };
 
   return (
-     <div 
-        ref={setNodeRef} 
-        style={style} 
-        {...attributes}
-        className={`transition-all duration-200 ${isSortableDragging ? 'z-50' : ''}`}
-      >
+    <div 
+      ref={setNodeRef} 
+      style={style} 
+      {...attributes}
+      className={`transition-all duration-200 ${isSortableDragging ? 'z-50' : ''}`}
+    >
       <Card 
         className={`cursor-pointer hover:shadow-md transition-all duration-200 h-full flex flex-col ${
           isSortableDragging 
@@ -193,7 +218,6 @@ function SortableTaskCard({
           <div className="space-y-3 flex-1">
             <div className="flex items-start justify-between">
               <div className="flex items-start gap-2 flex-1">
-                {/* Improved drag handle with better visual feedback */}
                 <div 
                   className="mt-1 cursor-grab active:cursor-grabbing hover:bg-blue-100 p-1 rounded transition-colors duration-150"
                   {...listeners}
@@ -205,11 +229,9 @@ function SortableTaskCard({
                 >
                   <GripVertical className="w-4 h-4 text-gray-500 hover:text-blue-600 transition-colors" />
                 </div>
-              <h4 className="font-medium text-sm leading-tight flex-1">
-  {capitalizeDisplayText(task.title)}
-</h4>
-
-
+                <h4 className="font-medium text-sm leading-tight flex-1">
+                  {capitalizeDisplayText(task.title)}
+                </h4>
               </div>
               <div className="relative">
                 <Button 
@@ -257,11 +279,11 @@ function SortableTaskCard({
               </div>
             </div>
             
-           {task.description && (
-  <p className="text-xs text-gray-600 line-clamp-2">
-    {capitalizeDisplayText(task.description)}
-  </p>
-)}
+            {task.description && (
+              <p className="text-xs text-gray-600 line-clamp-2">
+                {capitalizeDisplayText(task.description)}
+              </p>
+            )}
             
             <div className="flex items-center justify-between">
               {getPriorityBadge(task.priority)}
@@ -288,13 +310,19 @@ function SortableTaskCard({
                 <span>{task.assignee_name || 'Unassigned'}</span>
               </div>
             )}
-
+            {task.has_publish_date && task.publish_date && (
+  <div className="flex items-center gap-2 text-xs text-purple-500">
+    <Calendar className="w-3 h-3" />
+    <span>Publish: {new Date(task.publish_date).toLocaleDateString()}</span>
+  </div>
+)}
             {task.due_date && (
               <div className="flex items-center gap-2 text-xs text-gray-500">
                 <Calendar className="w-3 h-3" />
-                <span>{new Date(task.due_date).toLocaleDateString()}</span>
+                <span> Due: {new Date(task.due_date).toLocaleDateString()}</span>
               </div>
             )}
+
           </div>
         </CardContent>
       </Card>
@@ -320,17 +348,16 @@ function TaskCardOverlay({
                 <GripVertical className="w-4 h-4 text-blue-600" />
               </div>
               <h4 className="font-medium text-sm leading-tight flex-1">
-  {capitalizeDisplayText(task.title)}
-</h4>
-
-         </div>
+                {capitalizeDisplayText(task.title)}
+              </h4>
+            </div>
           </div>
           
-       {task.description && (
-  <p className="text-xs text-gray-600 line-clamp-2">
-    {capitalizeDisplayText(task.description)}
-  </p>
-)}
+          {task.description && (
+            <p className="text-xs text-gray-600 line-clamp-2">
+              {capitalizeDisplayText(task.description)}
+            </p>
+          )}
           <div className="flex items-center justify-between">
             {getPriorityBadge(task.priority)}
             <div className="h-6 text-xs w-24 px-2 py-1 bg-white border rounded-md flex items-center justify-center">
@@ -344,13 +371,20 @@ function TaskCardOverlay({
               <span>{task.assignee_name || 'Unassigned'}</span>
             </div>
           )}
-
+  {task.has_publish_date && task.publish_date && (
+            <div className="flex items-center gap-2 text-xs text-purple-500">
+              <Calendar className="w-3 h-3" />
+              <span>Publish: {new Date(task.publish_date).toLocaleDateString()}</span>
+            </div>
+          )}
           {task.due_date && (
             <div className="flex items-center gap-2 text-xs text-gray-500">
               <Calendar className="w-3 h-3" />
-              <span>{new Date(task.due_date).toLocaleDateString()}</span>
+              <span>Due: {new Date(task.due_date).toLocaleDateString()}</span>
             </div>
           )}
+
+        
         </div>
       </CardContent>
     </Card>
@@ -400,6 +434,38 @@ function SortableColumn({
     transition,
   };
 
+  // Get the appropriate icon for each column
+  const getColumnIcon = (columnId: string) => {
+    switch (columnId) {
+      case 'todo':
+        return <Plus className="w-8 h-8 mx-auto" />;
+      case 'in_progress':
+        return <Clock className="w-8 h-8 mx-auto" />;
+      case 'done':
+        return <Target className="w-8 h-8 mx-auto" />;
+      case 'blocked':
+        return <AlertCircle className="w-8 h-8 mx-auto" />;
+      default:
+        return <Plus className="w-8 h-8 mx-auto" />;
+    }
+  };
+
+  // Get the empty state message for each column
+  const getEmptyStateMessage = (columnId: string) => {
+    switch (columnId) {
+      case 'todo':
+        return 'Create a new task to get started';
+      case 'in_progress':
+        return 'Move tasks from "To Do" to get started';
+      case 'done':
+        return 'Complete some tasks to see them here';
+      case 'blocked':
+        return 'No blocked tasks at the moment';
+      default:
+        return 'No tasks';
+    }
+  };
+
   return (
     <div 
       ref={setNodeRef}
@@ -412,7 +478,7 @@ function SortableColumn({
         <h3 className="font-semibold text-lg">{column.title}</h3>
         <div className="flex items-center gap-2">
           <Badge variant="secondary" className="transition-all duration-200">{tasks.length}</Badge>
-           {column.id === 'todo' && (
+          {column.id === 'todo' && (
             <Button
               variant="ghost"
               size="sm"
@@ -456,18 +522,13 @@ function SortableColumn({
               }`}
             >
               <div className="text-gray-400 mb-2 transition-all duration-300">
-                {column.id === 'todo' && <Plus className="w-8 h-8 mx-auto" />}
-                {column.id === 'in_progress' && <Clock className="w-8 h-8 mx-auto" />}
-                {column.id === 'blocked' && <AlertCircle className="w-8 h-8 mx-auto" />}
-                {column.id === 'done' && <Target className="w-8 h-8 mx-auto" />}
+                {getColumnIcon(column.id)}
               </div>
               <p className="text-sm text-gray-500 font-medium mb-2 transition-all duration-300">
                 {isOver ? 'Drop task here' : `No ${column.title.toLowerCase()} tasks`}
               </p>
               <p className="text-xs text-gray-400 transition-all duration-300">
-                {isOver ? 'Release to move task' : 
-                  column.id === 'todo' && 'Create a new task to get started'
-                }
+                {isOver ? 'Release to move task' : getEmptyStateMessage(column.id)}
               </p>
               {column.id === 'todo' && !isOver && (
                 <Button
@@ -487,19 +548,306 @@ function SortableColumn({
     </div>
   );
 }
-// Helper function to capitalize display text
-const capitalizeDisplayText = (text: string): string => {
-  if (!text) return text;
-  return text.charAt(0).toUpperCase() + text.slice(1);
-};
+// Task List Item Component for Tab View
+interface TaskListItemProps {
+  task: ProjectTask;
+  onTaskClick: (task: ProjectTask) => void;
+  onEditTask: (task: ProjectTask) => void;
+  onDeleteClick: (task: ProjectTask) => void;
+  onStatusChange: (taskId: number, newStatus: string) => void;
+  getPriorityBadge: (priority: string) => JSX.Element;
+  companyUsers: Employee[];
+  dropdownOpen: number | null;
+  setDropdownOpen: (id: number | null) => void;
+}
 
-// Helper function to capitalize first letter of each sentence in description
-const capitalizeDescription = (text: string): string => {
-  if (!text) return text;
-  return text.split('. ').map(sentence => 
-    sentence.charAt(0).toUpperCase() + sentence.slice(1)
-  ).join('. ');
-};
+function TaskListItem({
+  task,
+  onTaskClick,
+  onEditTask,
+  onDeleteClick,
+  onStatusChange,
+  getPriorityBadge,
+  companyUsers,
+  dropdownOpen,
+  setDropdownOpen
+}: TaskListItemProps) {
+  const handleViewTask = (e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setDropdownOpen(null);
+    onTaskClick(task);
+  };
+
+  const handleEditTask = (e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setDropdownOpen(null);
+    onEditTask(task);
+  };
+
+  const handleDeleteTask = (e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setDropdownOpen(null);
+    onDeleteClick(task);
+  };
+
+  return (
+    <div className="border rounded-lg p-4 hover:shadow-md transition-all duration-200 bg-white">
+      <div className="flex items-start justify-between">
+        <div className="flex items-start gap-3 flex-1">
+          <div className="flex-shrink-0 mt-1">
+            <div className="w-2 h-2 rounded-full bg-blue-500"></div>
+          </div>
+          <div className="flex-1 min-w-0">
+            <h4 
+              className="font-medium text-base mb-2 cursor-pointer hover:text-blue-600 transition-colors"
+              onClick={() => onTaskClick(task)}
+            >
+              {capitalizeDisplayText(task.title)}
+            </h4>
+            
+            {task.description && (
+              <p className="text-sm text-gray-600 mb-3 line-clamp-2">
+                {capitalizeDisplayText(task.description)}
+              </p>
+            )}
+            
+            <div className="flex flex-wrap items-center gap-4 text-sm text-gray-500">
+              <div className="flex items-center gap-1">
+                {getPriorityBadge(task.priority)}
+              </div>
+              {task.has_publish_date && task.publish_date && (
+  <div className="flex items-center gap-1">
+    <Calendar className="w-4 h-4 text-purple-500" />
+    <span className="text-purple-600">
+      Publish: {new Date(task.publish_date).toLocaleDateString()}
+    </span>
+  </div>
+)}
+              <div className="flex items-center gap-1">
+                <Calendar className="w-4 h-4" />
+                <span>
+                  Due:
+                  {task.due_date 
+                    ? new Date(task.due_date).toLocaleDateString()
+                    : 'No due date'
+                  }
+                </span>
+              </div>
+              
+              {task.assigned_to && (
+                <div className="flex items-center gap-1">
+                  <User className="w-4 h-4" />
+                  <span>{task.assignee_name || 'Unassigned'}</span>
+                </div>
+              )}
+              
+              <div className="flex items-center gap-1">
+                <span className="text-xs font-medium px-2 py-1 bg-gray-100 rounded">
+                  {KANBAN_COLUMNS.find(col => col.status === task.status)?.title || task.status}
+                </span>
+              </div>
+            </div>
+          </div>
+        </div>
+        
+        <div className="relative flex-shrink-0">
+          <Select
+            value={task.status}
+            onValueChange={(value) => onStatusChange(task.id, value)}
+          >
+            <SelectTrigger className="h-8 text-sm w-32 transition-all hover:bg-gray-50 mb-2">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {KANBAN_COLUMNS.map(col => (
+                <SelectItem key={col.id} value={col.status}>
+                  {col.title}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          
+          <Button 
+            variant="ghost" 
+            size="sm"
+            onClick={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              setDropdownOpen(dropdownOpen === task.id ? null : task.id);
+            }}
+          >
+            <MoreVertical className="w-4 h-4" />
+          </Button>
+          
+          {dropdownOpen === task.id && (
+            <div 
+              className="absolute right-0 top-full mt-1 w-48 bg-white rounded-md shadow-lg border z-50 animate-in fade-in-0 zoom-in-95"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="py-1">
+                <button
+                  className="flex items-center w-full px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 transition-colors"
+                  onClick={handleViewTask}
+                >
+                  <Eye className="w-4 h-4 mr-2" />
+                  View Details
+                </button>
+                <button
+                  className="flex items-center w-full px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 transition-colors"
+                  onClick={handleEditTask}
+                >
+                  <Edit className="w-4 h-4 mr-2" />
+                  Edit
+                </button>
+                <button
+                  className="flex items-center w-full px-4 py-2 text-sm text-red-600 hover:bg-gray-100 transition-colors"
+                  onClick={handleDeleteTask}
+                >
+                  <Trash2 className="w-4 h-4 mr-2" />
+                  Delete
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// Tab View Component
+interface TabViewProps {
+  tasks: ProjectTask[];
+  onTaskClick: (task: ProjectTask) => void;
+  onEditTask: (task: ProjectTask) => void;
+  onDeleteClick: (task: ProjectTask) => void;
+  onStatusChange: (taskId: number, newStatus: string) => void;
+  getPriorityBadge: (priority: string) => JSX.Element;
+  companyUsers: Employee[];
+  dropdownOpen: number | null;
+  setDropdownOpen: (id: number | null) => void;
+  activeTab: string;
+}
+
+function TabView({
+  tasks,
+  onTaskClick,
+  onEditTask,
+  onDeleteClick,
+  onStatusChange,
+  getPriorityBadge,
+  companyUsers,
+  dropdownOpen,
+  setDropdownOpen,
+  activeTab
+}: TabViewProps) {
+  const filteredTasks = activeTab === 'all' 
+    ? tasks 
+    : tasks.filter(task => task.status === activeTab);
+
+  const tasksByStatus = TAB_STATUS_OPTIONS
+    .filter(option => option.id !== 'all')
+    .map(option => ({
+      ...option,
+      tasks: tasks.filter(task => task.status === option.status),
+      count: tasks.filter(task => task.status === option.status).length
+    }));
+
+  if (activeTab !== 'all') {
+    return (
+      <div className="space-y-4">
+        {filteredTasks.length > 0 ? (
+          filteredTasks.map(task => (
+            <TaskListItem
+              key={task.id}
+              task={task}
+              onTaskClick={onTaskClick}
+              onEditTask={onEditTask}
+              onDeleteClick={onDeleteClick}
+              onStatusChange={onStatusChange}
+              getPriorityBadge={getPriorityBadge}
+              companyUsers={companyUsers}
+              dropdownOpen={dropdownOpen}
+              setDropdownOpen={setDropdownOpen}
+            />
+          ))
+        ) : (
+          <div className="text-center py-12 border-2 border-dashed rounded-lg">
+            <div className="text-gray-400 mb-4">
+              <List className="w-12 h-12 mx-auto" />
+            </div>
+            <p className="text-lg font-medium text-gray-500 mb-2">No tasks found</p>
+            <p className="text-sm text-gray-400">
+              {activeTab === 'todo' && 'No tasks to do. Create a new task to get started!'}
+              {activeTab === 'in_progress' && 'No tasks in progress. Move tasks from "To Do" to get started!'}
+              {activeTab === 'done' && 'No completed tasks yet.'}
+              {activeTab === 'blocked' && 'No blocked tasks.'}
+            </p>
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  return (
+    <Accordion type="multiple" className="space-y-4">
+      {tasksByStatus.map((statusGroup) => (
+        <AccordionItem key={statusGroup.id} value={statusGroup.id} className="border rounded-lg">
+          <AccordionTrigger className="px-6 py-4 hover:no-underline hover:bg-gray-50 transition-colors bg-[#f2f2f2] cursor-pointer ">
+            <div className="flex items-center justify-between w-full pr-4">
+              <div className="flex items-center gap-3">
+                <div className={`w-3 h-3 rounded-full ${
+                  statusGroup.id === 'todo' ? 'bg-gray-400' :
+                  statusGroup.id === 'in_progress' ? 'bg-blue-500' :
+                  statusGroup.id === 'done' ? 'bg-green-500' : 'bg-red-500'
+                }`} />
+                <span className="font-semibold text-lg">{statusGroup.title}</span>
+                <Badge variant="secondary" className="ml-2">
+                  {statusGroup.count}
+                </Badge>
+              </div>
+             
+            </div>
+          </AccordionTrigger>
+          <AccordionContent className="px-6 pb-4 mt-2">
+            <div className="space-y-3">
+              {statusGroup.tasks.length > 0 ? (
+                statusGroup.tasks.map(task => (
+                  <TaskListItem
+                    key={task.id}
+                    task={task}
+                    onTaskClick={onTaskClick}
+                    onEditTask={onEditTask}
+                    onDeleteClick={onDeleteClick}
+                    onStatusChange={onStatusChange}
+                    getPriorityBadge={getPriorityBadge}
+                    companyUsers={companyUsers}
+                    dropdownOpen={dropdownOpen}
+                    setDropdownOpen={setDropdownOpen}
+                  />
+                ))
+              ) : (
+                <div className="text-center py-8 border-2 border-dashed rounded-lg">
+                  <p className="text-gray-500 mb-2">No {statusGroup.title.toLowerCase()} tasks</p>
+                  <p className="text-sm text-gray-400">
+                    {statusGroup.id === 'todo' && 'Create a new task to get started!'}
+                    {statusGroup.id === 'in_progress' && 'Move tasks from "To Do" to get started!'}
+                    {statusGroup.id === 'done' && 'Complete some tasks to see them here!'}
+                    {statusGroup.id === 'blocked' && 'No blocked tasks at the moment.'}
+                  </p>
+                </div>
+              )}
+            </div>
+          </AccordionContent>
+        </AccordionItem>
+      ))}
+    </Accordion>
+  );
+}
+
 export function ProjectTasks({ user }: ProjectTasksProps) {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
@@ -518,12 +866,75 @@ export function ProjectTasks({ user }: ProjectTasksProps) {
   const [taskToDelete, setTaskToDelete] = useState<ProjectTask | null>(null);
   const [activeTask, setActiveTask] = useState<ProjectTask | null>(null);
   const [overColumn, setOverColumn] = useState<string | null>(null);
+  const [activeView, setActiveView] = useState<'kanban' | 'list'>('kanban');
+  const [activeTab, setActiveTab] = useState('all');
+const [showBlockConfirmDialog, setShowBlockConfirmDialog] = useState(false);
+const [taskToBlock, setTaskToBlock] = useState<{ taskId: number; newStatus: string } | null>(null);
 
+
+const handleTaskStatusUpdateWithConfirm = async (taskId: number, newStatus: string) => {
+  // Show confirmation dialog only when changing to "blocked" status
+  if (newStatus === 'blocked') {
+    setTaskToBlock({ taskId, newStatus });
+    setShowBlockConfirmDialog(true);
+    return;
+  }
+
+  // For other status changes, proceed directly
+  await handleTaskStatusUpdate(taskId, newStatus);
+};
+
+// Add this function to handle confirmed blocking
+const handleConfirmBlock = async () => {
+  if (!taskToBlock) return;
+  
+  try {
+    const currentTask = tasks.find(task => task.id === taskToBlock.taskId);
+    if (!currentTask) {
+      toast.error('Task not found');
+      return;
+    }
+
+    const backendStatus = getBackendStatus(taskToBlock.newStatus);
+    const assigneeId = currentTask.assignee_id || currentTask.assigned_to;
+
+    // Update local state immediately for better UX
+    const updatedTasks = tasks.map(task =>
+      task.id === taskToBlock.taskId ? { ...task, status: taskToBlock.newStatus } : task
+    );
+    setTasks(updatedTasks);
+
+    await taskApi.update(taskToBlock.taskId, { 
+      title: currentTask.title,
+      description: currentTask.description,
+      priority: currentTask.priority,
+      status: backendStatus,
+      assigned_to: assigneeId,
+      due_date: currentTask.due_date,
+      hasPublishDate: currentTask.has_publish_date, // Add this
+      publishDate: currentTask.publish_date // Add this
+    });
+    
+    toast.success('Task moved to Blocked');
+  } catch (error) {
+    // Revert on error
+    await fetchProjectTasks();
+    if (error instanceof ApiError) {
+      toast.error(`Failed to update task: ${error.message}`);
+    } else {
+      console.error('Task update error:', error);
+      toast.error('Failed to update task status');
+    }
+  } finally {
+    setShowBlockConfirmDialog(false);
+    setTaskToBlock(null);
+  }
+};
   // Dnd-kit sensors
   const sensors = useSensors(
     useSensor(PointerSensor, {
       activationConstraint: {
-        distance: 3, // Reduced distance for quicker activation
+        distance: 3,
       },
     }),
     useSensor(KeyboardSensor, {
@@ -542,24 +953,29 @@ export function ProjectTasks({ user }: ProjectTasksProps) {
     };
   }, []);
 
-  const [newTask, setNewTask] = useState({
-    title: '',
-    description: '',
-    priority: 'medium' as 'low' | 'medium' | 'high',
-    assigned_to: '',
-    due_date: '',
-    status: 'todo' as string
-  });
+const [newTask, setNewTask] = useState({
+  title: '',
+  description: '',
+  priority: 'medium' as 'low' | 'medium' | 'high',
+  assigned_to: '',
+  due_date: '',
+  status: 'todo' as string,
+  has_publish_date: false, // Add this
+  publish_date: '', // Add this
+});
 
-  const [editTask, setEditTask] = useState({
-    id: 0,
-    title: '',
-    description: '',
-    priority: 'medium' as 'low' | 'medium' | 'high',
-    assigned_to: '',
-    due_date: '',
-    status: 'todo' as string
-  });
+// Update the editTask state
+const [editTask, setEditTask] = useState({
+  id: 0,
+  title: '',
+  description: '',
+  priority: 'medium' as 'low' | 'medium' | 'high',
+  assigned_to: '',
+  due_date: '',
+  status: 'todo' as string,
+  has_publish_date: false, // Add this
+  publish_date: '', // Add this
+});
 
   useEffect(() => {
     if (id) {
@@ -633,8 +1049,6 @@ export function ProjectTasks({ user }: ProjectTasksProps) {
     const { active } = event;
     const task = tasks.find(t => t.id === active.id);
     setActiveTask(task || null);
-    
-    // Add visual feedback
     document.body.style.cursor = 'grabbing';
   };
 
@@ -650,233 +1064,262 @@ export function ProjectTasks({ user }: ProjectTasksProps) {
     setOverColumn(overColumnId || null);
   };
 
-  const handleDragEnd = async (event: DragEndEvent) => {
-    const { active, over } = event;
-    
-    // Reset cursor and state
-    document.body.style.cursor = '';
-    setOverColumn(null);
-    
-    if (!over) {
-      setActiveTask(null);
-      return;
+// Also update the handleDragEnd function
+const handleDragEnd = async (event: DragEndEvent) => {
+  const { active, over } = event;
+  
+  document.body.style.cursor = '';
+  setOverColumn(null);
+  
+  if (!over) {
+    setActiveTask(null);
+    return;
+  }
+
+  const activeTask = tasks.find(task => task.id === active.id);
+  const overColumn = KANBAN_COLUMNS.find(col => col.id === over.id);
+
+  if (!activeTask || !overColumn) {
+    setActiveTask(null);
+    return;
+  }
+
+  if (activeTask.status === overColumn.status) {
+    setActiveTask(null);
+    return;
+  }
+
+  // Show confirmation dialog when moving to blocked status
+  if (overColumn.status === 'blocked') {
+    setTaskToBlock({ taskId: activeTask.id, newStatus: overColumn.status });
+    setShowBlockConfirmDialog(true);
+    setActiveTask(null);
+    return;
+  }
+
+  // For other status changes, proceed directly
+  try {
+    const backendStatus = getBackendStatus(overColumn.status);
+    const assigneeId = activeTask.assignee_id || activeTask.assigned_to;
+
+    const updatedTasks = tasks.map(task =>
+      task.id === activeTask.id ? { ...task, status: overColumn.status } : task
+    );
+    setTasks(updatedTasks);
+
+    await taskApi.update(activeTask.id, {
+      title: activeTask.title,
+      description: activeTask.description,
+      priority: activeTask.priority,
+      status: backendStatus,
+      assigned_to: assigneeId,
+      due_date: activeTask.due_date,
+      hasPublishDate: activeTask.has_publish_date, // Add this
+      publishDate: activeTask.publish_date // Add this
+    });
+
+    toast.success(`Task moved to ${overColumn.title}`);
+  } catch (error) {
+    await fetchProjectTasks();
+    if (error instanceof ApiError) {
+      toast.error(`Failed to move task: ${error.message}`);
+    } else {
+      console.error('Task move error:', error);
+      toast.error('Failed to move task');
     }
-
-    const activeTask = tasks.find(task => task.id === active.id);
-    const overColumn = KANBAN_COLUMNS.find(col => col.id === over.id);
-
-    if (!activeTask || !overColumn) {
-      setActiveTask(null);
-      return;
-    }
-
-    // Don't do anything if dropping in the same column
-    if (activeTask.status === overColumn.status) {
-      setActiveTask(null);
-      return;
-    }
-
-    try {
-      // Map frontend status to backend status
-      const backendStatus = getBackendStatus(overColumn.status);
-      const assigneeId = activeTask.assignee_id || activeTask.assigned_to;
-
-      // Update task status immediately for better UX
-      const updatedTasks = tasks.map(task =>
-        task.id === activeTask.id ? { ...task, status: overColumn.status } : task
-      );
-      setTasks(updatedTasks);
-
-      // Send update to backend
-      await taskApi.update(activeTask.id, {
-        title: activeTask.title,
-        description: activeTask.description,
-        priority: activeTask.priority,
-        status: backendStatus,
-        assigned_to: assigneeId,
-        due_date: activeTask.due_date
-      });
-
-      toast.success(`Task moved to ${overColumn.title}`);
-    } catch (error) {
-      // Revert on error
-      await fetchProjectTasks();
-      if (error instanceof ApiError) {
-        toast.error(`Failed to move task: ${error.message}`);
-      } else {
-        console.error('Task move error:', error);
-        toast.error('Failed to move task');
-      }
-    } finally {
-      setActiveTask(null);
-    }
-  };
-
+  } finally {
+    setActiveTask(null);
+  }
+};
   const handleDragCancel = () => {
-    // Reset cursor and styles
     document.body.style.cursor = '';
     setOverColumn(null);
     setActiveTask(null);
   };
 
-  const handleCreateTask = async () => {
-    if (!newTask.title) {
-      toast.error('Please enter task title');
+ const handleCreateTask = async () => {
+  if (!newTask.title) {
+    toast.error('Please enter task title');
+    return;
+  }
+
+  setIsCreatingTask(true);
+  try {
+    const backendStatus = getBackendStatus(newTask.status);
+    
+    const taskData = {
+      title: newTask.title,
+      description: newTask.description || undefined,
+      priority: newTask.priority,
+      assigned_to: newTask.assigned_to ? parseInt(newTask.assigned_to) : undefined,
+      due_date: newTask.due_date || undefined,
+      status: backendStatus,
+      project_id: parseInt(id!),
+      projectId: parseInt(id!),
+      hasPublishDate: newTask.has_publish_date, // Use correct field name
+      publishDate: newTask.has_publish_date ? newTask.publish_date : undefined, // Use correct field name
+    };
+
+    console.log('Creating task with data:', taskData); // Debug log
+
+    await taskApi.create(taskData);
+    toast.success('Task created successfully');
+    
+    await fetchProjectTasks();
+    
+    setShowCreateTaskDialog(false);
+    setNewTask({
+      title: '',
+      description: '',
+      priority: 'medium',
+      assigned_to: '',
+      due_date: '',
+      status: 'todo',
+      has_publish_date: false,
+      publish_date: ''
+    });
+  } catch (error) {
+    if (error instanceof ApiError) {
+      toast.error(`Failed to create task: ${error.message}`);
+    } else {
+      console.error('Task creation error:', error);
+      toast.error('Failed to create task');
+    }
+  } finally {
+    setIsCreatingTask(false);
+  }
+};
+
+const handleTaskStatusUpdate = async (taskId: number, newStatus: string) => {
+  try {
+    const currentTask = tasks.find(task => task.id === taskId);
+    if (!currentTask) {
+      toast.error('Task not found');
       return;
     }
 
-    setIsCreatingTask(true);
-    try {
-      const backendStatus = getBackendStatus(newTask.status);
-      
-      const taskData = {
-        title: newTask.title,
-        description: newTask.description || undefined,
-        priority: newTask.priority,
-        assigned_to: newTask.assigned_to ? parseInt(newTask.assigned_to) : undefined,
-        due_date: newTask.due_date || undefined,
-        status: backendStatus,
-        project_id: parseInt(id!),
-        projectId: parseInt(id!)
-      };
+    const backendStatus = getBackendStatus(newStatus);
+    const assigneeId = currentTask.assignee_id || currentTask.assigned_to;
 
-      await taskApi.create(taskData);
-      toast.success('Task created successfully');
-      
-      await fetchProjectTasks();
-      
-      setShowCreateTaskDialog(false);
-      setNewTask({
-        title: '',
-        description: '',
-        priority: 'medium',
-        assigned_to: '',
-        due_date: '',
-        status: 'todo'
-      });
-    } catch (error) {
-      if (error instanceof ApiError) {
-        toast.error(`Failed to create task: ${error.message}`);
-      } else {
-        console.error('Task creation error:', error);
-        toast.error('Failed to create task');
-      }
-    } finally {
-      setIsCreatingTask(false);
+    await taskApi.update(taskId, { 
+      title: currentTask.title,
+      description: currentTask.description,
+      priority: currentTask.priority,
+      status: backendStatus,
+      assigned_to: assigneeId,
+      due_date: currentTask.due_date,
+      hasPublishDate: currentTask.has_publish_date, // Add this
+      publishDate: currentTask.publish_date // Add this
+    });
+    
+    await fetchProjectTasks();
+    toast.success('Task status updated');
+  } catch (error) {
+    if (error instanceof ApiError) {
+      toast.error(`Failed to update task: ${error.message}`);
+    } else {
+      console.error('Task update error:', error);
+      toast.error('Failed to update task status');
     }
-  };
-
-  const handleTaskStatusUpdate = async (taskId: number, newStatus: string) => {
-    try {
-      const currentTask = tasks.find(task => task.id === taskId);
-      if (!currentTask) {
-        toast.error('Task not found');
-        return;
-      }
-
-      const backendStatus = getBackendStatus(newStatus);
-      const assigneeId = currentTask.assignee_id || currentTask.assigned_to;
-
-      await taskApi.update(taskId, { 
-        title: currentTask.title,
-        description: currentTask.description,
-        priority: currentTask.priority,
-        status: backendStatus,
-        assigned_to: assigneeId,
-        due_date: currentTask.due_date
-      });
-      
-      await fetchProjectTasks();
-      toast.success('Task status updated');
-    } catch (error) {
-      if (error instanceof ApiError) {
-        toast.error(`Failed to update task: ${error.message}`);
-      } else {
-        console.error('Task update error:', error);
-        toast.error('Failed to update task status');
-      }
-    }
-  };
+  }
+};
 
   const handleTaskClick = (task: ProjectTask) => {
     setSelectedTask(task);
     setShowTaskDetailDialog(true);
   };
 
-  const handleEditTask = (task: ProjectTask) => {
-    setSelectedTask(task);
+const handleEditTask = (task: ProjectTask) => {
+  setSelectedTask(task);
+  
+  const formattedDueDate = task.due_date 
+    ? new Date(task.due_date).toISOString().split('T')[0]
+    : '';
+
+  const formattedPublishDate = task.publish_date 
+    ? new Date(task.publish_date).toISOString().split('T')[0]
+    : '';
+
+  const assigneeId = task.assignee_id || task.assigned_to;
+
+  setEditTask({
+    id: task.id,
+    title: task.title,
+    description: task.description || '',
+    priority: task.priority as 'low' | 'medium' | 'high',
+    assigned_to: assigneeId?.toString() || '',
+    due_date: formattedDueDate,
+    status: task.status,
+    has_publish_date: task.has_publish_date || false, // Add this
+    publish_date: formattedPublishDate // Add this
+  });
+  
+  setShowTaskDetailDialog(false);
+  setShowEditTaskDialog(true);
+};
+const handleUpdateTask = async () => {
+  if (!editTask.title) {
+    toast.error('Please enter task title');
+    return;
+  }
+
+  setIsUpdatingTask(true);
+  try {
+    const backendStatus = getBackendStatus(editTask.status);
     
-    const formattedDueDate = task.due_date 
-      ? new Date(task.due_date).toISOString().split('T')[0]
-      : '';
+    let dueDateValue = editTask.due_date;
+    if (dueDateValue) {
+      const localDate = new Date(dueDateValue + 'T00:00:00');
+      dueDateValue = localDate.toISOString().split('T')[0];
+    }
 
-    const assigneeId = task.assignee_id || task.assigned_to;
+    let publishDateValue = editTask.publish_date;
+    if (publishDateValue && editTask.has_publish_date) {
+      const localDate = new Date(publishDateValue + 'T00:00:00');
+      publishDateValue = localDate.toISOString().split('T')[0];
+    }
 
+    const taskData = {
+      title: editTask.title,
+      description: editTask.description || undefined,
+      priority: editTask.priority,
+      assigned_to: editTask.assigned_to && editTask.assigned_to !== "unassigned" ? parseInt(editTask.assigned_to) : undefined,
+      due_date: dueDateValue || undefined,
+      status: backendStatus,
+      hasPublishDate: editTask.has_publish_date, // Use correct field name
+      publishDate: editTask.has_publish_date ? publishDateValue : undefined, // Use correct field name
+    };
+
+    console.log('Updating task with data:', taskData); // Debug log
+
+    await taskApi.update(editTask.id, taskData);
+    toast.success('Task updated successfully');
+    
+    await fetchProjectTasks();
+    
+    setShowEditTaskDialog(false);
     setEditTask({
-      id: task.id,
-      title: task.title,
-      description: task.description || '',
-      priority: task.priority as 'low' | 'medium' | 'high',
-      assigned_to: assigneeId?.toString() || '',
-      due_date: formattedDueDate,
-      status: task.status
+      id: 0,
+      title: '',
+      description: '',
+      priority: 'medium',
+      assigned_to: '',
+      due_date: '',
+      status: 'todo',
+      has_publish_date: false,
+      publish_date: ''
     });
-    
-    setShowTaskDetailDialog(false);
-    setShowEditTaskDialog(true);
-  };
-
-  const handleUpdateTask = async () => {
-    if (!editTask.title) {
-      toast.error('Please enter task title');
-      return;
+  } catch (error) {
+    if (error instanceof ApiError) {
+      toast.error(`Failed to update task: ${error.message}`);
+    } else {
+      console.error('Task update error:', error);
+      toast.error('Failed to update task');
     }
-
-    setIsUpdatingTask(true);
-    try {
-      const backendStatus = getBackendStatus(editTask.status);
-      
-      let dueDateValue = editTask.due_date;
-      if (dueDateValue) {
-        const localDate = new Date(dueDateValue + 'T00:00:00');
-        dueDateValue = localDate.toISOString().split('T')[0];
-      }
-
-      const taskData = {
-        title: editTask.title,
-        description: editTask.description || undefined,
-        priority: editTask.priority,
-        assigned_to: editTask.assigned_to && editTask.assigned_to !== "unassigned" ? parseInt(editTask.assigned_to) : undefined,
-        due_date: dueDateValue || undefined,
-        status: backendStatus,
-      };
-
-      await taskApi.update(editTask.id, taskData);
-      toast.success('Task updated successfully');
-      
-      await fetchProjectTasks();
-      
-      setShowEditTaskDialog(false);
-      setEditTask({
-        id: 0,
-        title: '',
-        description: '',
-        priority: 'medium',
-        assigned_to: '',
-        due_date: '',
-        status: 'todo'
-      });
-    } catch (error) {
-      if (error instanceof ApiError) {
-        toast.error(`Failed to update task: ${error.message}`);
-      } else {
-        console.error('Task update error:', error);
-        toast.error('Failed to update task');
-      }
-    } finally {
-      setIsUpdatingTask(false);
-    }
-  };
+  } finally {
+    setIsUpdatingTask(false);
+  }
+};
 
   const handleDeleteClick = (task: ProjectTask) => {
     setTaskToDelete(task);
@@ -884,29 +1327,26 @@ export function ProjectTasks({ user }: ProjectTasksProps) {
     setDropdownOpen(null);
   };
 
- const handleDeleteTask = async () => {
-  if (!taskToDelete) return;
+  const handleDeleteTask = async () => {
+    if (!taskToDelete) return;
 
-  try {
-    await taskApi.delete(taskToDelete.id);
-    toast.success('Task deleted successfully');
-    
-    // Remove the task from local state immediately for better UX
-    setTasks(prev => prev.filter(task => task.id !== taskToDelete.id));
-    
-    setShowDeleteConfirmDialog(false);
-    setTaskToDelete(null);
-  } catch (error) {
-    if (error instanceof ApiError) {
-      toast.error(`Failed to delete task: ${error.message}`);
-    } else {
-      console.error('Task deletion error:', error);
-      toast.error('Failed to delete task');
+    try {
+      await taskApi.delete(taskToDelete.id);
+      toast.success('Task deleted successfully');
+      setTasks(prev => prev.filter(task => task.id !== taskToDelete.id));
+      setShowDeleteConfirmDialog(false);
+      setTaskToDelete(null);
+    } catch (error) {
+      if (error instanceof ApiError) {
+        toast.error(`Failed to delete task: ${error.message}`);
+      } else {
+        console.error('Task deletion error:', error);
+        toast.error('Failed to delete task');
+      }
+      await fetchProjectTasks();
     }
-    // Refresh tasks to ensure consistency
-    await fetchProjectTasks();
-  }
-};
+  };
+
   const handleViewTask = (task: ProjectTask) => {
     setSelectedTask(task);
     setShowEditTaskDialog(false);
@@ -918,7 +1358,6 @@ export function ProjectTasks({ user }: ProjectTasksProps) {
     setShowCreateTaskDialog(true);
   };
 
-  // Updated getPriorityBadge with capitalized text
   const getPriorityBadge = (priority: string) => {
     const variants = {
       low: 'bg-green-100 text-green-800',
@@ -976,13 +1415,16 @@ export function ProjectTasks({ user }: ProjectTasksProps) {
           </Button>
           <div>
             <h1 className="text-3xl font-bold tracking-tight">{project.name}</h1>
-            <p className="text-gray-500">Project Tasks - Kanban View</p>
+            <p className="text-gray-500">Project Tasks - {activeView === 'kanban' ? 'Kanban View' : 'List View'}</p>
           </div>
         </div>
-        <Button className="gap-2 transition-all hover:scale-105" onClick={() => setShowCreateTaskDialog(true)}>
-          <Plus className="w-4 h-4" />
-          New Task
-        </Button>
+        <div className="flex items-center gap-3">
+       
+          <Button className="gap-2 transition-all hover:scale-105" onClick={() => setShowCreateTaskDialog(true)}>
+            <Plus className="w-4 h-4" />
+            New Task
+          </Button>
+        </div>
       </div>
 
       {/* Project Info */}
@@ -1022,8 +1464,38 @@ export function ProjectTasks({ user }: ProjectTasksProps) {
           </div>
         </CardContent>
       </Card>
+      
 
-      {/* Kanban Board with Dnd-kit */}
+   <div className="w-80 border rounded-lg p-1 bg-white">
+      <div className="flex">
+        <button
+          className={`flex-1 flex items-center cursor-pointer justify-center gap-2 py-1.5 px-3 text-sm font-medium rounded-md transition-all duration-200 ${
+            activeView === 'kanban' 
+              ? 'bg-black text-white shadow-sm' 
+              : 'text-gray-600 hover:text-gray-900 hover:bg-gray-100'
+          }`}
+          onClick={() => setActiveView('kanban')}
+        >
+          <Kanban className="w-4 h-4" />
+          Column View
+        </button>
+        <button
+          className={`flex-1 flex items-center justify-center cursor-pointer gap-2 py-1.5 px-3 text-sm font-medium rounded-md transition-all duration-200 ${
+            activeView === 'list' 
+              ? 'bg-black text-white shadow-sm' 
+              : 'text-gray-600 hover:text-gray-900 hover:bg-gray-100'
+          }`}
+          onClick={() => setActiveView('list')}
+        >
+          <List className="w-4 h-4" />
+          List View
+        </button>
+      </div>
+    </div>
+           
+    {/* View Content */}
+    {activeView === 'kanban' ? (
+      /* Kanban Board with Dnd-kit */
       <DndContext
         sensors={sensors}
         collisionDetection={closestCenter}
@@ -1045,7 +1517,7 @@ export function ProjectTasks({ user }: ProjectTasksProps) {
                 onTaskClick={handleTaskClick}
                 onEditTask={handleEditTask}
                 onDeleteClick={handleDeleteClick}
-                onStatusChange={handleTaskStatusUpdate}
+                onStatusChange={handleTaskStatusUpdateWithConfirm} // Updated to use new function
                 getPriorityBadge={getPriorityBadge}
                 companyUsers={companyUsers}
                 dropdownOpen={dropdownOpen}
@@ -1057,7 +1529,6 @@ export function ProjectTasks({ user }: ProjectTasksProps) {
           })}
         </div>
 
-        {/* Drag Overlay for smooth dragging experience */}
         <DragOverlay dropAnimation={dropAnimationConfig}>
           {activeTask ? (
             <TaskCardOverlay 
@@ -1067,7 +1538,95 @@ export function ProjectTasks({ user }: ProjectTasksProps) {
           ) : null}
         </DragOverlay>
       </DndContext>
+    ) : (
+      /* List/Tab View */
+      <Card>
+        <CardContent className="p-6">
+          <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
+            <TabsList className="grid w-full grid-cols-5">
+              {TAB_STATUS_OPTIONS.map(option => (
+                <TabsTrigger 
+                  key={option.id} 
+                  value={option.id}
+                  className="flex items-center gap-2"
+                >
+                  {option.title}
+                  <Badge variant="secondary" className="ml-1">
+                    {option.id === 'all' ? tasks.length : getTasksByStatus(option.status).length}
+                  </Badge>
+                </TabsTrigger>
+              ))}
+            </TabsList>
+            
+            <TabsContent value={activeTab} className="space-y-4">
+              <TabView
+                tasks={tasks}
+                onTaskClick={handleTaskClick}
+                onEditTask={handleEditTask}
+                onDeleteClick={handleDeleteClick}
+                onStatusChange={handleTaskStatusUpdateWithConfirm} // Updated to use new function
+                getPriorityBadge={getPriorityBadge}
+                companyUsers={companyUsers}
+                dropdownOpen={dropdownOpen}
+                setDropdownOpen={setDropdownOpen}
+                activeTab={activeTab}
+              />
+            </TabsContent>
+          </Tabs>
+        </CardContent>
+      </Card>
+    )}
 
+    {/* Block Confirmation Dialog */}
+
+<Dialog open={showBlockConfirmDialog} onOpenChange={setShowBlockConfirmDialog}>
+  <DialogContent className="max-w-md">
+    <DialogHeader>
+      <DialogTitle className="flex items-center gap-2 text-amber-600">
+        <AlertCircle className="w-5 h-5" />
+        Confirm Block Task
+      </DialogTitle>
+      <DialogDescription>
+        Are you sure you want to block this task? This indicates there are issues preventing progress.
+      </DialogDescription>
+    </DialogHeader>
+
+    <div className="py-4">
+      {taskToBlock && (
+        <div className="bg-amber-50 border border-amber-200 rounded-lg p-4">
+          <p className="font-medium text-amber-800">
+            {tasks.find(task => task.id === taskToBlock.taskId)?.title || 'Task'} will be moved to Blocked status
+          </p>
+          <p className="text-sm text-amber-600 mt-2">
+            Consider adding a comment explaining what's blocking this task.
+          </p>
+        </div>
+      )}
+    </div>
+
+    <DialogFooter>
+      <Button 
+        variant="outline" 
+        onClick={() => {
+          setShowBlockConfirmDialog(false);
+          setTaskToBlock(null);
+        }}
+      >
+        Cancel
+      </Button>
+      <Button 
+        variant="default" 
+        onClick={handleConfirmBlock}
+        className="bg-amber-600 hover:bg-amber-700"
+      >
+        <AlertCircle className="w-4 h-4 mr-2" />
+        Block Task
+      </Button>
+    </DialogFooter>
+  </DialogContent>
+</Dialog>
+
+    {/* Add Task Dialog */}
       {/* Create Task Dialog */}
       <Dialog open={showCreateTaskDialog} onOpenChange={setShowCreateTaskDialog}>
         <DialogContent className="max-w-2xl">
@@ -1174,7 +1733,34 @@ export function ProjectTasks({ user }: ProjectTasksProps) {
               </div>
             </div>
           </div>
+{/* Add this section to the Create Task Dialog */}
+<div className="space-y-3">
+  <div className="flex items-center gap-3">
+    <input
+      type="checkbox"
+      id="task-has-publish-date"
+      checked={newTask.has_publish_date}
+      onChange={(e) => setNewTask({ ...newTask, has_publish_date: e.target.checked })}
+      className="w-4 h-4 text-blue-600 bg-gray-100 border-gray-300 rounded focus:ring-blue-500"
+    />
+    <Label htmlFor="task-has-publish-date" className="cursor-pointer">
+      Set Publish Date
+    </Label>
+  </div>
 
+  {newTask.has_publish_date && (
+    <div>
+      <Label htmlFor="task-publish-date">Publish Date</Label>
+      <Input
+        id="task-publish-date"
+        type="date"
+        value={newTask.publish_date}
+        onChange={(e) => setNewTask({ ...newTask, publish_date: e.target.value })}
+        className="mt-1 transition-all focus:ring-2 focus:ring-blue-500"
+      />
+    </div>
+  )}
+</div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setShowCreateTaskDialog(false)} disabled={isCreatingTask}>
               Cancel
@@ -1304,7 +1890,34 @@ export function ProjectTasks({ user }: ProjectTasksProps) {
               </div>
             </div>
           </div>
+{/* Add this section to the Edit Task Dialog */}
+<div className="space-y-3">
+  <div className="flex items-center gap-3">
+    <input
+      type="checkbox"
+      id="edit-task-has-publish-date"
+      checked={editTask.has_publish_date}
+      onChange={(e) => setEditTask({ ...editTask, has_publish_date: e.target.checked })}
+      className="w-4 h-4 text-blue-600 bg-gray-100 border-gray-300 rounded focus:ring-blue-500"
+    />
+    <Label htmlFor="edit-task-has-publish-date" className="cursor-pointer">
+      Set Publish Date
+    </Label>
+  </div>
 
+  {editTask.has_publish_date && (
+    <div>
+      <Label htmlFor="edit-task-publish-date">Publish Date</Label>
+      <Input
+        id="edit-task-publish-date"
+        type="date"
+        value={editTask.publish_date}
+        onChange={(e) => setEditTask({ ...editTask, publish_date: e.target.value })}
+        className="mt-1 transition-all focus:ring-2 focus:ring-blue-500"
+      />
+    </div>
+  )}
+</div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setShowEditTaskDialog(false)} disabled={isUpdatingTask}>
               Cancel
@@ -1397,6 +2010,22 @@ export function ProjectTasks({ user }: ProjectTasksProps) {
                           <span>{selectedTask.assignee_name || 'Unassigned'}</span>
                         </div>
                       </div>
+                      {selectedTask.has_publish_date && selectedTask.publish_date && (
+  <div>
+    <p className="text-sm font-medium text-gray-500">Publish Date</p>
+    <div className="flex items-center gap-2 mt-1">
+      <Calendar className="w-4 h-4 text-purple-400" />
+      <span className="text-purple-600">
+        {new Date(selectedTask.publish_date).toLocaleDateString()}
+      </span>
+    </div>
+  </div>
+)}
+
+                    
+
+                       <div className="grid grid-cols-2 gap-4">
+
                       <div>
                         <p className="text-sm font-medium text-gray-500">Due Date</p>
                         <div className="flex items-center gap-2 mt-1">
@@ -1408,13 +2037,17 @@ export function ProjectTasks({ user }: ProjectTasksProps) {
                             }
                           </span>
                         </div>
+
+
                       </div>
+
                     </div>
 
                     <div>
                       <p className="text-sm font-medium text-gray-500">Created</p>
                       <p>{new Date(selectedTask.created_at).toLocaleDateString()}</p>
                     </div>
+                       </div>
                   </div>
                 </div>
               </div>

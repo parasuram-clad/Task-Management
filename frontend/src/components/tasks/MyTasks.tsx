@@ -31,6 +31,8 @@ interface Task {
   dueDate: string;
   assignedBy: string;
   createdAt: string;
+  has_publish_date?: boolean;
+  publish_date?: string;
 }
 
 interface TimeLog {
@@ -234,6 +236,8 @@ export function MyTasks({ user, navigateTo }: MyTasksProps) {
       dueDate: apiTask.due_date || '',
       assignedBy: apiTask.assignee_name || 'Manager',
       createdAt: apiTask.created_at || new Date().toISOString(),
+      has_publish_date: apiTask.has_publish_date,
+      publish_date: apiTask.publish_date
     };
   };
 
@@ -414,7 +418,9 @@ export function MyTasks({ user, navigateTo }: MyTasksProps) {
         priority: currentTask.priority,
         status: backendStatus,
         assigned_to: currentTask.assigned_to || currentTask.assignee_id,
-        due_date: currentTask.due_date
+        due_date: currentTask.due_date,
+        hasPublishDate: currentTask.has_publish_date,
+        publishDate: currentTask.publish_date
       });
 
       await fetchTasks();
@@ -660,7 +666,7 @@ export function MyTasks({ user, navigateTo }: MyTasksProps) {
                   className={`flex items-center gap-2 ${viewType === 'current' ? 'bg-black shadow-sm' : ''}`}
                 >
                   <Calendar className="w-4 h-4" />
-                  Current
+                  List View
                 </Button>
                 <Button
                   variant={viewType === 'calendar' ? 'default' : 'ghost'}
@@ -669,7 +675,7 @@ export function MyTasks({ user, navigateTo }: MyTasksProps) {
                   className={`flex items-center gap-2 ${viewType === 'calendar' ? 'bg-black shadow-sm' : ''}`}
                 >
                   <Calendar className="w-4 h-4" />
-                  Calendar
+                  Calendar View
                 </Button>
               </div>
             </div>
@@ -734,58 +740,119 @@ export function MyTasks({ user, navigateTo }: MyTasksProps) {
               </div>
 
               {/* Calendar Grid */}
-              <div className="border rounded-lg">
-                {/* Weekday Headers */}
-                <div className="grid grid-cols-7 bg-gray-50 border-b">
-                  {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map(day => (
-                    <div key={day} className="p-3 text-center text-sm font-medium text-gray-600">
-                      {day}
-                    </div>
-                  ))}
-                </div>
+            <div className="border rounded-lg">
+  {/* Weekday Headers */}
+  <div className="grid grid-cols-7 bg-gray-50 border-b">
+    {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map(day => (
+      <div key={day} className="p-3 text-center text-sm font-medium text-gray-600">
+        {day}
+      </div>
+    ))}
+  </div>
 
-                {/* Calendar Days */}
-                <div className="grid grid-cols-7 gap-px bg-gray-200">
-                  {calendarDays.map((day, index) => (
-                    <div
-                      key={index}
-                      className={`bg-white min-h-32 p-2 ${
-                        !day.isCurrentMonth ? 'bg-gray-50' : ''
-                      } ${day.isToday ? 'ring-2 ring-blue-500' : ''}`}
-                    >
-                      <div className={`text-sm font-medium mb-1 ${
-                        !day.isCurrentMonth ? 'text-gray-400' : 
-                        day.isToday ? 'text-blue-600' : 'text-gray-900'
-                      }`}>
-                        {day.date.getDate()}
-                      </div>
-                      
-                      {/* Tasks for this day */}
-                      <div className="space-y-1 max-h-20 overflow-y-auto">
-                        {day.tasks.map(task => (
-                          <div
-                            key={task.id}
-                            className="text-xs p-1 rounded cursor-pointer hover:bg-gray-100 border-l-2"
-                            style={{
-                              borderLeftColor: 
-                                task.priority === 'high' ? '#ef4444' :
-                                task.priority === 'medium' ? '#f59e0b' : '#10b981'
-                            }}
-                            onClick={() => handleTaskSelect(task)}
-                          >
-                            <div className="font-medium truncate">{task.title}</div>
-                            <div className="flex items-center gap-1 text-gray-500">
-                              <Badge variant="outline" className="text-xs h-4">
-                                {capitalizeWords(task.status.replace('-', ' '))}
-                              </Badge>
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  ))}
-                </div>
+  {/* Calendar Days */}
+  <div className="grid grid-cols-7 gap-px bg-gray-200">
+    {calendarDays.map((day, index) => (
+      <div
+        key={index}
+        className={`bg-white min-h-32 p-2 relative group ${
+          !day.isCurrentMonth ? 'bg-gray-50' : ''
+        } ${day.isToday ? 'ring-2 ring-blue-500' : ''}`}
+      >
+        <div className={`text-sm font-medium mb-1 ${
+          !day.isCurrentMonth ? 'text-gray-400' : 
+          day.isToday ? 'text-blue-600' : 'text-gray-900'
+        }`}>
+          {day.date.getDate()}
+        </div>
+        
+        {/* Tasks for this day */}
+        <div className="space-y-1 max-h-20 overflow-y-auto">
+          {day.tasks.map(task => (
+            <div
+              key={task.id}
+              className="text-xs p-1 rounded cursor-pointer hover:bg-gray-100 border-l-4 bg-gray-100"
+              style={{
+                borderLeftColor: 
+                  task.priority === 'high' ? '#ef4444' :
+                  task.priority === 'medium' ? '#f59e0b' : '#10b981'
+              }}
+              onClick={() => handleTaskSelect(task)}
+            >
+              <div className="font-medium truncate">{task.title}</div>
+              <div className="flex items-center gap-1 text-gray-500">
+                <Badge variant="outline" className="text-xs h-4">
+                  {capitalizeWords(task.status.replace('-', ' '))}
+                </Badge>
               </div>
+            </div>
+          ))}
+        </div>
+
+        {/* Date Hover Tooltip - Shows all tasks with publish dates for this day */}
+{day.tasks.some(task => task.has_publish_date && task.publish_date) && (
+  <div className="absolute z-50 invisible group-hover:visible top-full left-1/2 transform -translate-x-1/2 mt-2 w-64">
+    <div className="bg-white/95 backdrop-blur-md text-gray-900 rounded-2xl shadow-xl border border-gray-200/60">
+      {/* Header */}
+      <div className="px-4 py-3 border-b border-gray-100">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <Calendar className="w-4 h-4 text-purple-600" />
+            <span className="font-semibold text-sm">Due Dates</span>
+          </div>
+          <div className="text-xs text-gray-500 bg-gray-100 px-2 py-1 rounded-full">
+            {day.date.getDate()} {day.date.toLocaleDateString('en-US', { month: 'short' })}
+          </div>
+        </div>
+      </div>
+      
+      {/* Tasks */}
+      <div className="max-h-60 overflow-y-auto p-2">
+<div className="space-y-1">
+  {day.tasks
+    .filter(task => task.has_publish_date && task.publish_date)
+    .map(task => (
+      <div 
+        key={task.id}
+        className="flex items-center justify-between p-1.5 rounded-md bg-gradient-to-r from-purple-50/50 to-blue-50/50 border border-purple-100/50 hover:border-purple-200 transition-colors"
+      >
+        <div className="flex-1 min-w-0">
+          <div className="font-medium text-xs text-gray-900 truncate leading-tight">
+            {task.title}
+          </div>
+          <div className="flex items-center gap-1 mt-0.5">
+            <span className={`inline-block w-1.5 h-1.5 rounded-full ${
+              task.status === 'done' ? 'bg-green-400' :
+              task.status === 'in-progress' ? 'bg-blue-400' :
+              task.status === 'blocked' ? 'bg-red-400' :
+              'bg-gray-400'
+            }`} />
+            <span className="text-[10px] text-gray-500 capitalize">
+              {task.status.replace('-', ' ')}
+            </span>
+          </div>
+        </div>
+        <div className="text-right ml-1.5 flex-shrink-0">
+          <div className="text-[10px] text-gray-500 leading-none">Pub</div>
+          <div className="text-xs font-bold text-purple-700 leading-none">
+            {new Date(task.publish_date).getDate()}
+          </div>
+        </div>
+      </div>
+    ))
+  }
+</div>
+      </div>
+      
+      {/* Arrow */}
+      <div className="absolute bottom-full left-1/2 transform -translate-x-1/2 border-8 border-transparent border-b-white/95"></div>
+    </div>
+  </div>
+)}
+      </div>
+    ))}
+  </div>
+</div>
             </div>
           ) : (
             <Tabs defaultValue="all" className="w-full rounded-2xl">
@@ -810,10 +877,18 @@ export function MyTasks({ user, navigateTo }: MyTasksProps) {
                           <p className="truncate">{capitalizeWords(task.title)}</p>
                           {isOverdue(task.dueDate) && (
                             <AlertCircle className="w-4 h-4 text-red-500 shrink-0" />
+                          )}  {task.has_publish_date && task.publish_date && (
+                            <div className="flex items-center gap-1 text-xs text-purple-500">
+                              <Calendar className="w-3 h-3" />
+                              <span>Publish: {new Date(task.publish_date).toLocaleDateString()}</span>
+                            </div>
                           )}
                         </div>
                         <p className="text-sm text-gray-500 line-clamp-1">{capitalizeWords(task.description)}</p>
-                        <p className="text-xs text-gray-400 mt-1">{task.project} • Assigned by {task.assignedBy}</p>
+                        <div className="flex flex-wrap items-center gap-2 mt-1">
+                          <p className="text-xs text-gray-400">{task.project} • Assigned by {task.assignedBy}</p>
+                        
+                        </div>
                       </div>
                       <div className="flex flex-col items-end gap-2 shrink-0">
                         <div className="flex gap-2">
@@ -832,7 +907,7 @@ export function MyTasks({ user, navigateTo }: MyTasksProps) {
                           isOverdue(task.dueDate) ? 'text-red-600' : 'text-gray-500'
                         }`}>
                           <Calendar className="w-3 h-3" />
-                          <span>{new Date(task.dueDate).toLocaleDateString()}</span>
+                          <span>Due: {new Date(task.dueDate).toLocaleDateString()}</span>
                         </div>
                       </div>
                     </div>
@@ -847,252 +922,263 @@ export function MyTasks({ user, navigateTo }: MyTasksProps) {
         </CardContent>
       </Card>
 
-<Dialog open={showTaskDialog} onOpenChange={(open) => {
-  if (!open && hasUnsavedChanges()) {
-    if (window.confirm('You have unsaved changes. Are you sure you want to close without saving?')) {
-      setShowTaskDialog(false);
-    }
-  } else {
-    setShowTaskDialog(open);
-  }
-}}>
-  <DialogContent className="w-[95vw] max-w-[1200px] max-h-[90vh] overflow-y-auto" style={{maxWidth: '1000px', width: '80vw'}}>
-    <DialogHeader className="pb-4">
-     <DialogTitle className="text-xl font-bold">{selectedTask ? capitalizeWords(selectedTask.title) : ''}</DialogTitle>
-      <DialogDescription>{selectedTask ? capitalizeWords(selectedTask.project) : ''}</DialogDescription>
-    </DialogHeader>
+      <Dialog open={showTaskDialog} onOpenChange={(open) => {
+        if (!open && hasUnsavedChanges()) {
+          if (window.confirm('You have unsaved changes. Are you sure you want to close without saving?')) {
+            setShowTaskDialog(false);
+          }
+        } else {
+          setShowTaskDialog(open);
+        }
+      }}>
+        <DialogContent className="w-[95vw] max-w-[1200px] max-h-[90vh] overflow-y-auto" style={{maxWidth: '1000px', width: '80vw'}}>
+          <DialogHeader className="pb-4">
+            <DialogTitle className="text-xl font-bold">{selectedTask ? capitalizeWords(selectedTask.title) : ''}</DialogTitle>
+            <DialogDescription>{selectedTask ? capitalizeWords(selectedTask.project) : ''}</DialogDescription>
+          </DialogHeader>
 
-    {selectedTask && (
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* Left Column - Task Details */}
-        <div className="space-y-4">
-          <div className="pb-2">
-            <h3 className="text-base font-semibold text-gray-900">Task Details</h3>
-          </div>
-          
-          <div className="space-y-4">
-            <div>
-              <Label className="text-sm font-medium block mb-1">Description</Label>
-              <div className="p-3 bg-gray-50 rounded border border-gray-200 text-sm">
-                <p className="text-gray-700">{selectedTask.description}</p>
-              </div>
-            </div>
-
-            <div className="grid grid-cols-1 gap-3">
-              <div>
-                <Label className="text-sm font-medium block mb-1">Status</Label>
-              <Select
-  value={localTaskStatus || selectedTask?.status}
-  onValueChange={handleStatusChange}
->
-  <SelectTrigger className="w-full h-9">
-    <SelectValue />
-  </SelectTrigger>
-  <SelectContent>
-    <SelectItem value="to-do">To Do</SelectItem>
-    <SelectItem value="in-progress">In Progress</SelectItem>
-    <SelectItem value="blocked">Blocked</SelectItem>
-    <SelectItem value="done">Done</SelectItem>
-  </SelectContent>
-</Select>
-              </div>
-
-              <div>
-                <Label className="text-sm font-medium block mb-1">Priority</Label>
-                <Select value={selectedTask.priority} disabled>
-                  <SelectTrigger className="w-full h-9">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="low">Low</SelectItem>
-                    <SelectItem value="medium">Medium</SelectItem>
-                    <SelectItem value="high">High</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-            </div>
-
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <Label className="text-sm font-medium block mb-1">Due Date</Label>
-                <div className="flex items-center gap-2 p-2 bg-gray-50 rounded border border-gray-200 text-sm">
-                  <Calendar className="w-4 h-4 text-gray-500" />
-                  <span className="text-gray-700">
-                    {new Date(selectedTask.dueDate).toLocaleDateString()}
-                  </span>
+          {selectedTask && (
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+              {/* Left Column - Task Details */}
+              <div className="space-y-4">
+                <div className="pb-2">
+                  <h3 className="text-base font-semibold text-gray-900">Task Details</h3>
                 </div>
-              </div>
-
-              <div>
-                <Label className="text-sm font-medium block mb-1">Assigned By</Label>
-                <div className="p-2 bg-gray-50 rounded border border-gray-200 text-sm">
-                  <p className="text-gray-700">{selectedTask.assignedBy}</p>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        {/* Right Column - Time Logs */}
-        <div className="space-y-4">
-          <div className="pb-2">
-            <div className="flex items-center justify-between">
-              <h3 className="text-base font-semibold text-gray-900">Time Tracking</h3>
-              <div className="text-xs text-gray-500">
-                Total: <span className="font-semibold text-blue-600">{totalTime.hours}h {totalTime.minutes}m</span>
-              </div>
-            </div>
-          </div>
-
-          {/* Add New Time Log Form */}
-          <div className="bg-blue-50 p-4 rounded border border-blue-200">
-            <Label className="text-sm font-medium mb-2 block">Log Time</Label>
-            <div className="space-y-3">
-              <div className="grid grid-cols-3 gap-2">
-                <div className="col-span-1">
-                  <Label className="text-xs font-medium">Date</Label>
-                 <Input
-  type="date"
-  value={newTimeLog.date}
-  onChange={(e) => {
-    // Ensure we're only storing the date part (YYYY-MM-DD)
-    const dateValue = e.target.value;
-    setNewTimeLog(prev => ({ ...prev, date: dateValue }));
-  }}
-  className="h-8 text-xs mt-1"
-/>
-                </div>
-                <div className="col-span-1">
-                  <Label className="text-xs font-medium">Hours</Label>
-                  <Input
-                    type="number"
-                    min="0"
-                    max="24"
-                    placeholder="0"
-                    value={newTimeLog.hours}
-                    onChange={(e) => setNewTimeLog(prev => ({ ...prev, hours: parseInt(e.target.value) || 0 }))}
-                    className="h-8 text-xs mt-1"
-                  />
-                </div>
-                <div className="col-span-1">
-                  <Label className="text-xs font-medium">Minutes</Label>
-                  <Input
-                    type="number"
-                    min="0"
-                    max="59"
-                    placeholder="0"
-                    value={newTimeLog.minutes}
-                    onChange={(e) => setNewTimeLog(prev => ({ ...prev, minutes: parseInt(e.target.value) || 0 }))}
-                    className="h-8 text-xs mt-1"
-                  />
-                </div>
-              </div>
-              
-              <div>
-                <Label className="text-xs font-medium">Description</Label>
-                <Input
-                  placeholder="Work description"
-                  value={newTimeLog.description}
-                  onChange={(e) => setNewTimeLog(prev => ({ ...prev, description: e.target.value }))}
-                  className="h-8 text-xs mt-1"
-                />
-              </div>
-              
-              <Button 
-                onClick={handleAddTimeLog} 
-                className="w-full h-8 text-xs"
-                disabled={newTimeLog.hours === 0 && newTimeLog.minutes === 0}
-              >
-                <Plus className="w-3 h-3 mr-1" />
-                Add Time
-              </Button>
-            </div>
-          </div>
-
-          {/* Time Logs List */}
-          <div>
-            <Label className="text-sm font-medium mb-2 block">Time Entries</Label>
-            <div className="space-y-2 max-h-60 overflow-y-auto">
-              {timeLogs.map(log => (
-                <div key={log.id} className="flex items-center justify-between p-3 border border-gray-200 rounded hover:bg-gray-50 transition-colors group">
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center justify-between mb-1">
-                      <div className="flex items-center gap-2">
-                        <div className="text-xs font-medium text-gray-900 bg-white px-2 py-1 rounded border">
-                          {new Date(log.date).toLocaleDateString('en-US', { 
-                            month: 'short', 
-                            day: 'numeric'
-                          })}
-                        </div>
-                        <div className="text-xs font-semibold text-blue-700 bg-blue-100 px-2 py-1 rounded">
-                          {log.hours}h {log.minutes}m
-                        </div>
-                      </div>
-                    
-<Button
-  variant="ghost"
-  size="sm"
-  onClick={(e) => {
-    e.stopPropagation(); // Prevent triggering the task selection
-    handleDeleteTimeLog(log.id);
-  }}
-  className="h-6 w-6 p-0 opacity-0 group-hover:opacity-100 transition-opacity text-red-500 hover:text-red-700 hover:bg-red-50"
->
-  <Trash2 className="w-3 h-3" />
-</Button>
+                
+                <div className="space-y-4">
+                  <div>
+                    <Label className="text-sm font-medium block mb-1">Description</Label>
+                    <div className="p-3 bg-gray-50 rounded border border-gray-200 text-sm">
+                      <p className="text-gray-700">{selectedTask.description}</p>
                     </div>
-                    <p className="text-gray-600 text-xs leading-relaxed mb-1">{log.description}</p>
-                    <div className="text-xs text-gray-400 flex items-center gap-1">
-                      <Clock className="w-3 h-3" />
-                      {log.loggedBy}
+                  </div>
+
+                  <div className="grid grid-cols-1 gap-3">
+                    <div>
+                      <Label className="text-sm font-medium block mb-1">Status</Label>
+                      <Select
+                        value={localTaskStatus || selectedTask?.status}
+                        onValueChange={handleStatusChange}
+                      >
+                        <SelectTrigger className="w-full h-9">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="to-do">To Do</SelectItem>
+                          <SelectItem value="in-progress">In Progress</SelectItem>
+                          <SelectItem value="blocked">Blocked</SelectItem>
+                          <SelectItem value="done">Done</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+
+                    <div>
+                      <Label className="text-sm font-medium block mb-1">Priority</Label>
+                      <Select value={selectedTask.priority} disabled>
+                        <SelectTrigger className="w-full h-9">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="low">Low</SelectItem>
+                          <SelectItem value="medium">Medium</SelectItem>
+                          <SelectItem value="high">High</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <Label className="text-sm font-medium block mb-1">Due Date</Label>
+                      <div className="flex items-center gap-2 p-2 bg-gray-50 rounded border border-gray-200 text-sm">
+                        <Calendar className="w-4 h-4 text-gray-500" />
+                        <span className="text-gray-700">
+                          {new Date(selectedTask.dueDate).toLocaleDateString()}
+                        </span>
+                      </div>
+                    </div>
+
+                    <div>
+                      <Label className="text-sm font-medium block mb-1">Assigned By</Label>
+                      <div className="p-2 bg-gray-50 rounded border border-gray-200 text-sm">
+                        <p className="text-gray-700">{selectedTask.assignedBy}</p>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Publish Date Section */}
+                  {selectedTask.has_publish_date && selectedTask.publish_date && (
+                    <div>
+                      <Label className="text-sm font-medium block mb-1">Publish Date</Label>
+                      <div className="flex items-center gap-2 p-2 bg-purple-50 rounded border border-purple-200 text-sm">
+                        <Calendar className="w-4 h-4 text-purple-500" />
+                        <span className="text-purple-700">
+                          {new Date(selectedTask.publish_date).toLocaleDateString()}
+                        </span>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* Right Column - Time Logs */}
+              <div className="space-y-4">
+                <div className="pb-2">
+                  <div className="flex items-center justify-between">
+                    <h3 className="text-base font-semibold text-gray-900">Time Tracking</h3>
+                    <div className="text-xs text-gray-500">
+                      Total: <span className="font-semibold text-blue-600">{totalTime.hours}h {totalTime.minutes}m</span>
                     </div>
                   </div>
                 </div>
-              ))}
-              {timeLogs.length === 0 && (
-                <div className="text-center py-8 border-2 border-dashed border-gray-300 rounded bg-gray-50">
-                  <Clock className="w-8 h-8 text-gray-400 mx-auto mb-2" />
-                  <p className="text-gray-500 text-sm">No time entries</p>
-                  <p className="text-xs text-gray-400 mt-1">Add time entry above</p>
-                </div>
-              )}
-            </div>
-          </div>
-        </div>
-      </div>
-    )}
 
-    <DialogFooter className="border-t pt-4 mt-6">
-      <div className="flex justify-end w-full items-center">
-      
-        <div className="flex gap-2">
-         <Button 
-  variant="outline" 
-  onClick={() => {
-    if (hasUnsavedChanges()) {
-      if (window.confirm('You have unsaved changes. Are you sure you want to cancel?')) {
-        setShowTaskDialog(false);
-      }
-    } else {
-      setShowTaskDialog(false);
-    }
-  }}
-  className="h-8 text-sm"
->
-  Cancel
-</Button>
-          <Button 
-  onClick={handleSaveTask}
-  disabled={!hasUnsavedChanges()}
-  className="h-8 text-sm"
->
-  Save
-</Button>
-        </div>
-      </div>
-    </DialogFooter>
-  </DialogContent>
-</Dialog>
+                {/* Add New Time Log Form */}
+                <div className="bg-blue-50 p-4 rounded border border-blue-200">
+                  <Label className="text-sm font-medium mb-2 block">Log Time</Label>
+                  <div className="space-y-3">
+                    <div className="grid grid-cols-3 gap-2">
+                      <div className="col-span-1">
+                        <Label className="text-xs font-medium">Date</Label>
+                        <Input
+                          type="date"
+                          value={newTimeLog.date}
+                          onChange={(e) => {
+                            const dateValue = e.target.value;
+                            setNewTimeLog(prev => ({ ...prev, date: dateValue }));
+                          }}
+                          className="h-8 text-xs mt-1"
+                        />
+                      </div>
+                      <div className="col-span-1">
+                        <Label className="text-xs font-medium">Hours</Label>
+                        <Input
+                          type="number"
+                          min="0"
+                          max="24"
+                          placeholder="0"
+                          value={newTimeLog.hours}
+                          onChange={(e) => setNewTimeLog(prev => ({ ...prev, hours: parseInt(e.target.value) || 0 }))}
+                          className="h-8 text-xs mt-1"
+                        />
+                      </div>
+                      <div className="col-span-1">
+                        <Label className="text-xs font-medium">Minutes</Label>
+                        <Input
+                          type="number"
+                          min="0"
+                          max="59"
+                          placeholder="0"
+                          value={newTimeLog.minutes}
+                          onChange={(e) => setNewTimeLog(prev => ({ ...prev, minutes: parseInt(e.target.value) || 0 }))}
+                          className="h-8 text-xs mt-1"
+                        />
+                      </div>
+                    </div>
+                    
+                    <div>
+                      <Label className="text-xs font-medium">Description</Label>
+                      <Input
+                        placeholder="Work description"
+                        value={newTimeLog.description}
+                        onChange={(e) => setNewTimeLog(prev => ({ ...prev, description: e.target.value }))}
+                        className="h-8 text-xs mt-1"
+                      />
+                    </div>
+                    
+                    <Button 
+                      onClick={handleAddTimeLog} 
+                      className="w-full h-8 text-xs"
+                      disabled={newTimeLog.hours === 0 && newTimeLog.minutes === 0}
+                    >
+                      <Plus className="w-3 h-3 mr-1" />
+                      Add Time
+                    </Button>
+                  </div>
+                </div>
+
+                {/* Time Logs List */}
+                <div>
+                  <Label className="text-sm font-medium mb-2 block">Time Entries</Label>
+                  <div className="space-y-2 max-h-60 overflow-y-auto">
+                    {timeLogs.map(log => (
+                      <div key={log.id} className="flex items-center justify-between p-3 border border-gray-200 rounded hover:bg-gray-50 transition-colors group">
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center justify-between mb-1">
+                            <div className="flex items-center gap-2">
+                              <div className="text-xs font-medium text-gray-900 bg-white px-2 py-1 rounded border">
+                                {new Date(log.date).toLocaleDateString('en-US', { 
+                                  month: 'short', 
+                                  day: 'numeric'
+                                })}
+                              </div>
+                              <div className="text-xs font-semibold text-blue-700 bg-blue-100 px-2 py-1 rounded">
+                                {log.hours}h {log.minutes}m
+                              </div>
+                            </div>
+                          
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleDeleteTimeLog(log.id);
+                              }}
+                              className="h-6 w-6 p-0 opacity-0 group-hover:opacity-100 transition-opacity text-red-500 hover:text-red-700 hover:bg-red-50"
+                            >
+                              <Trash2 className="w-3 h-3" />
+                            </Button>
+                          </div>
+                          <p className="text-gray-600 text-xs leading-relaxed mb-1">{log.description}</p>
+                          <div className="text-xs text-gray-400 flex items-center gap-1">
+                            <Clock className="w-3 h-3" />
+                            {log.loggedBy}
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                    {timeLogs.length === 0 && (
+                      <div className="text-center py-8 border-2 border-dashed border-gray-300 rounded bg-gray-50">
+                        <Clock className="w-8 h-8 text-gray-400 mx-auto mb-2" />
+                        <p className="text-gray-500 text-sm">No time entries</p>
+                        <p className="text-xs text-gray-400 mt-1">Add time entry above</p>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
+          <DialogFooter className="border-t pt-4 mt-6">
+            <div className="flex justify-end w-full items-center">
+              <div className="flex gap-2">
+                <Button 
+                  variant="outline" 
+                  onClick={() => {
+                    if (hasUnsavedChanges()) {
+                      if (window.confirm('You have unsaved changes. Are you sure you want to cancel?')) {
+                        setShowTaskDialog(false);
+                      }
+                    } else {
+                      setShowTaskDialog(false);
+                    }
+                  }}
+                  className="h-8 text-sm"
+                >
+                  Cancel
+                </Button>
+                <Button 
+                  onClick={handleSaveTask}
+                  disabled={!hasUnsavedChanges()}
+                  className="h-8 text-sm"
+                >
+                  Save
+                </Button>
+              </div>
+            </div>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

@@ -794,7 +794,7 @@ export function AttendanceReport({ user }: AttendanceReportProps) {
   return (
     <div className="p-6 space-y-6">
       <div>
-        <h1 className="text-2xl font-bold">Attendance Report</h1>
+         <h1 className="text-3xl font-bold tracking-tight">Attendance Report</h1>
         <p className="text-gray-500">Generate and export detailed attendance reports</p>
       </div>
 
@@ -860,21 +860,7 @@ export function AttendanceReport({ user }: AttendanceReportProps) {
                       </SelectContent>
                     </Select>
                   </div>
-                  <div>
-                    <label className="text-sm mb-2 block">Role</label>
-                    <Select value={roleFilter} onValueChange={setRoleFilter}>
-                      <SelectTrigger>
-                        <SelectValue placeholder="All Roles" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {roles.map(role => (
-                          <SelectItem key={role} value={role}>
-                            {role === 'all' ? 'All Roles' : capitalizeFirstLetter(role)}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
+                  
                   <div className="flex items-end">
                     <Button onClick={handleExportWeekly} className="w-full gap-2" >
                       <Download className="w-4 h-4" />

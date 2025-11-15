@@ -34,6 +34,8 @@ const generateRandomPassword = () => {
   return password;
 };
 
+// In employeeController.js - Update the createEmployee function
+
 exports.createEmployee = async (req, res, next) => {
   try {
     const { error, value } = employeeSchema.validate(req.body);
@@ -56,7 +58,7 @@ exports.createEmployee = async (req, res, next) => {
       dateOfJoin,
       employmentType,
       shift,
-      location, // ADD THIS LINE
+      location,
       status
     } = value;
 
@@ -82,14 +84,15 @@ exports.createEmployee = async (req, res, next) => {
     await db.query('BEGIN');
 
     try {
-      // Insert into user_account table - FIXED: Added location to both columns and values
+      // Insert into user_account table - Note: password_changed_at is NULL for first-time users
       const userResult = await db.query(
         `
         INSERT INTO user_account (
           company_id, employee_code, name, email, password_hash, role, 
           is_active, phone, department, position, manager, location,
-          date_of_birth, date_of_join, employment_type, shift
-        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
+          date_of_birth, date_of_join, employment_type, shift,
+          password_changed_at  -- Add this field
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, NULL)
         RETURNING id, name, email, role, employee_code, is_active, phone, 
                  department, position, manager, location, date_of_birth, date_of_join, 
                  employment_type, shift
@@ -106,7 +109,7 @@ exports.createEmployee = async (req, res, next) => {
           department || null,
           position || null,
           manager || null,
-          location || null, // ADD THIS LINE
+          location || null,
           dateOfBirth || null,
           dateOfJoin,
           employmentType || null,
@@ -142,7 +145,7 @@ exports.createEmployee = async (req, res, next) => {
           employeeCode: newEmployee.employee_code,
           department: newEmployee.department,
           position: newEmployee.position,
-          location: newEmployee.location, // ADD THIS LINE
+          location: newEmployee.location,
           status: newEmployee.is_active ? 'active' : 'inactive'
         },
         emailSent: true
@@ -157,7 +160,6 @@ exports.createEmployee = async (req, res, next) => {
     next(err);
   }
 };
-
 // Generate unique employee ID
 const generateEmployeeId = async () => {
   const result = await db.query(
@@ -352,3 +354,137 @@ exports.updateEmployee = async (req, res, next) => {
   }
 };
 
+
+
+// In employeeController.js - Fix the deleteEmployee function
+// exports.deleteEmployee = async (req, res, next) => {
+//   try {
+//     const { id } = req.params;
+
+//     // Check if employee exists
+//     const existingEmployee = await db.query(
+//       `SELECT id, name, email FROM user_account WHERE id = $1`,
+//       [id]
+//     );
+
+//     if (existingEmployee.rows.length === 0) {
+//       res.status(404);
+//       return next(new Error('Employee not found'));
+//     }
+
+//     const employee = existingEmployee.rows[0];
+
+//     // Start transaction
+//     await db.query('BEGIN');
+
+//     try {
+//       // OPTION 1: Hard Delete (completely remove from database)
+//       // Uncomment the following lines if you want hard delete:
+//       /*
+//       await db.query('DELETE FROM user_account WHERE id = $1', [id]);
+//       */
+
+//       // OPTION 2: Soft Delete (recommended - keeps data integrity)
+//       // Update the user as inactive and modify email to avoid conflicts
+//       const deletedEmail = `deleted_${Date.now()}_${employee.email}`;
+      
+//       await db.query(
+//         `UPDATE user_account 
+//          SET 
+//            is_active = false,
+//            email = $1,
+//            updated_at = CURRENT_TIMESTAMP
+//          WHERE id = $2`,
+//         [deletedEmail, id]
+//       );
+
+//       await db.query('COMMIT');
+
+//       res.json({
+//         message: 'Employee deleted successfully',
+//         employee: {
+//           id: employee.id,
+//           name: employee.name
+//         }
+//       });
+
+//     } catch (dbError) {
+//       await db.query('ROLLBACK');
+//       console.error('Database error during employee deletion:', dbError);
+//       throw dbError;
+//     }
+
+//   } catch (err) {
+//     console.error('Error in deleteEmployee:', err);
+//     next(err);
+//   }
+// };
+
+
+// In employeeController.js - Hard Delete version
+exports.deleteEmployee = async (req, res, next) => {
+  try {
+    const { id } = req.params;
+
+    // Check if employee exists
+    const existingEmployee = await db.query(
+      `SELECT id, name FROM user_account WHERE id = $1`,
+      [id]
+    );
+
+    if (existingEmployee.rows.length === 0) {
+      res.status(404);
+      return next(new Error('Employee not found'));
+    }
+
+    const employee = existingEmployee.rows[0];
+
+    // Start transaction
+    await db.query('BEGIN');
+
+    try {
+      // Check for dependencies first (optional but recommended)
+      const timesheetsCheck = await db.query(
+        `SELECT id FROM timesheet WHERE user_id = $1 LIMIT 1`,
+        [id]
+      );
+
+      const attendanceCheck = await db.query(
+        `SELECT id FROM attendance WHERE user_id = $1 LIMIT 1`,
+        [id]
+      );
+
+      // If there are dependencies, you might want to handle them
+      // For now, we'll proceed with deletion
+      
+      // Delete the employee
+      await db.query('DELETE FROM user_account WHERE id = $1', [id]);
+
+      await db.query('COMMIT');
+
+      res.json({
+        message: 'Employee permanently deleted successfully',
+        employee: {
+          id: employee.id,
+          name: employee.name
+        }
+      });
+
+    } catch (dbError) {
+      await db.query('ROLLBACK');
+      console.error('Database error during employee deletion:', dbError);
+      
+      // Check if it's a foreign key constraint violation
+      if (dbError.code === '23503') { // Foreign key violation
+        res.status(400);
+        return next(new Error('Cannot delete employee because they have related records (timesheets, attendance, etc.). Please deactivate instead.'));
+      }
+      
+      throw dbError;
+    }
+
+  } catch (err) {
+    console.error('Error in deleteEmployee:', err);
+    next(err);
+  }
+};

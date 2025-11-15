@@ -25,9 +25,12 @@ import './services/api-test-helper';
 import { AddEmployee } from './components/employees/AddEmployee';
 import { EditEmployee } from './components/employees/EditEmployee';
 import { ProjectGrid } from './components/tasks/ProjectGrid';
+import { Profile } from './components/Profile/Profile';
+import { authApi } from './services/api';
+export type UserRole = 'employee' | 'manager' | 'hr' | 'admin' | 'finance';
 
-export type UserRole = 'employee' | 'manager' | 'hr' | 'admin';
 
+// In App.tsx - Update the User interface
 export interface User {
   id: string;
   name: string;
@@ -37,6 +40,21 @@ export interface User {
   department: string;
   designation: string;
   avatar?: string;
+  // Add all the missing fields from the API
+  phone?: string;
+  location?: string;
+  employee_code?: string;
+  employee_id?: string;
+  hire_date?: string;
+  is_active?: boolean;
+  position?: string;
+  manager?: string;
+  date_of_birth?: string;
+  date_of_join?: string;
+  employment_type?: string;
+  shift?: string;
+  created_at?: string;
+  last_login_at?: string;
 }
 
 export default function App() {
@@ -53,11 +71,64 @@ export default function App() {
     }
   }, []);
 
-  const handleLogin = (user: User) => {
+// In App.tsx - Update the handleLogin function or wherever you set the user
+// In App.tsx - Update the handleLogin function
+const handleLogin = async (userData: any) => {
+  try {
+    // After login, fetch complete user data using authApi.getMe()
+    const completeUserData = await authApi.getMe();
+    
+    // Create a complete user object with all available data
+    const user: User = {
+      id: completeUserData.id?.toString() || userData.id?.toString() || '',
+      name: completeUserData.name || userData.name || '',
+      email: completeUserData.email || userData.email || '',
+      role: (completeUserData.role as UserRole) || userData.role || 'employee',
+      employeeId: completeUserData.employee_code || completeUserData.employee_id || userData.employeeId || '',
+      department: completeUserData.department || userData.department || '',
+      designation: completeUserData.position || completeUserData.designation || userData.designation || '',
+      avatar: completeUserData.avatar || userData.avatar,
+      // Add all the additional fields with proper fallbacks
+      phone: completeUserData.phone || userData.phone,
+      location: completeUserData.location || userData.location,
+      employee_code: completeUserData.employee_code || userData.employee_code,
+      employee_id: completeUserData.employee_id || userData.employee_id,
+      hire_date: completeUserData.hire_date || userData.hire_date,
+      is_active: completeUserData.is_active !== undefined ? completeUserData.is_active : userData.is_active,
+      position: completeUserData.position || userData.position,
+      manager: completeUserData.manager || userData.manager,
+      date_of_birth: completeUserData.date_of_birth || userData.date_of_birth,
+      date_of_join: completeUserData.date_of_join || userData.date_of_join,
+      employment_type: completeUserData.employment_type || userData.employment_type,
+      shift: completeUserData.shift || userData.shift,
+      created_at: completeUserData.created_at || userData.created_at,
+      last_login_at: completeUserData.last_login_at || userData.last_login_at
+    };
+    
     setCurrentUser(user);
     setIsAuthenticated(true);
     localStorage.setItem('currentUser', JSON.stringify(user));
-  };
+  } catch (error) {
+    console.error('Error fetching complete user data:', error);
+    // Fallback to basic user data
+    const fallbackUser: User = {
+      id: userData.id?.toString() || '',
+      name: userData.name || '',
+      email: userData.email || '',
+      role: userData.role || 'employee',
+      employeeId: userData.employeeId || '',
+      department: userData.department || '',
+      designation: userData.designation || '',
+      avatar: userData.avatar,
+      // Include any additional fields that might be in userData
+      ...userData
+    };
+    
+    setCurrentUser(fallbackUser);
+    setIsAuthenticated(true);
+    localStorage.setItem('currentUser', JSON.stringify(fallbackUser));
+  }
+};
 
   const handleLogout = () => {
     setIsAuthenticated(false);
@@ -84,7 +155,8 @@ export default function App() {
                   : <EmployeeDashboard user={currentUser} />
               } 
             />
-            
+            <Route path="/profile" element={<Profile user={currentUser} />} />
+
             {/* Attendance Routes */}
             <Route path="/attendance/my-attendance" element={<MyAttendance user={currentUser!} />} />
             <Route path="/attendance/calendar" element={<AttendanceCalendar user={currentUser!} />} />

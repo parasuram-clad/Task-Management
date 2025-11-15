@@ -11,8 +11,9 @@ const taskSchema = Joi.object({
   priority: Joi.string().valid('low', 'medium', 'high').default('medium'),
   dueDate: Joi.string().pattern(/^\d{4}-\d{2}-\d{2}$/).allow(null),
   due_date: Joi.string().pattern(/^\d{4}-\d{2}-\d{2}$/).allow(null),
+  hasPublishDate: Joi.boolean().default(false), // Add this field
+  publishDate: Joi.string().pattern(/^\d{4}-\d{2}-\d{2}$/).allow(null), // Add this field
 });
-
 // Add this deleteTask function
 exports.deleteTask = async (req, res, next) => {
   const client = await db.pool.connect();
@@ -130,7 +131,6 @@ exports.getProjectTasks = async (req, res, next) => {
     next(err);
   }
 };
-
 exports.createTask = async (req, res, next) => {
   try {
     const { error, value } = taskSchema.validate(req.body);
@@ -141,16 +141,18 @@ exports.createTask = async (req, res, next) => {
 
     const assigneeId = value.assigneeId || value.assigned_to;
     const dueDate = value.dueDate || value.due_date;
+    const publishDate = value.publishDate;
+    const hasPublishDate = value.hasPublishDate;
     const { projectId, title, description, status, priority } = value;
 
     const insert = await db.query(
       `
       INSERT INTO task
-        (project_id, title, description, assignee_id, status, priority, due_date, created_by_id)
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+        (project_id, title, description, assignee_id, status, priority, due_date, has_publish_date, publish_date, created_by_id)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
       RETURNING *
       `,
-      [projectId, title, description || null, assigneeId || null, status, priority, dueDate || null, req.user.id]
+      [projectId, title, description || null, assigneeId || null, status, priority, dueDate || null, hasPublishDate, publishDate || null, req.user.id]
     );
     res.status(201).json(insert.rows[0]);
   } catch (err) {
@@ -169,6 +171,8 @@ exports.updateTask = async (req, res, next) => {
 
     const assigneeId = value.assigneeId || value.assigned_to;
     const dueDate = value.dueDate || value.due_date;
+    const publishDate = value.publishDate;
+    const hasPublishDate = value.hasPublishDate;
     const { title, description, status, priority } = value;
 
     const result = await db.query(
@@ -181,11 +185,13 @@ exports.updateTask = async (req, res, next) => {
         status = COALESCE($5, status),
         priority = COALESCE($6, priority),
         due_date = COALESCE($7, due_date),
+        has_publish_date = COALESCE($8, has_publish_date),
+        publish_date = COALESCE($9, publish_date),
         updated_at = NOW()
       WHERE id = $1
       RETURNING *
       `,
-      [taskId, title || null, description || null, assigneeId || null, status || null, priority || null, dueDate || null]
+      [taskId, title || null, description || null, assigneeId || null, status || null, priority || null, dueDate || null, hasPublishDate, publishDate || null]
     );
 
     if (result.rows.length === 0) {

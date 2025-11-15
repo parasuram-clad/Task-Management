@@ -1,5 +1,21 @@
 // API Service - All API endpoints
 import { apiClient } from './api-client';
+
+export interface PersonalSettings {
+  timeZone: string;
+  timesheetNotifications: boolean;
+  taskNotifications: boolean;
+  attendanceAlerts: boolean;
+  leaveNotifications: boolean;
+  weeklySummaryEmail: boolean;
+}
+
+export interface ChangePasswordRequest {
+  currentPassword: string;
+  newPassword: string;
+  confirmPassword: string;
+}
+
 export interface Employee {
   id: number;
   name: string;
@@ -27,6 +43,10 @@ export interface LoginRequest {
   email: string;
   password: string;
 }
+export interface FirstTimePasswordUpdateRequest {
+  email: string;
+  newPassword: string;
+}
 
 export interface LoginResponse {
   user: {
@@ -36,6 +56,7 @@ export interface LoginResponse {
     role: string;
   };
   accessToken: string;
+  requiresPasswordChange?: boolean; // Add this field
 }
 
 export interface AttendanceDay {
@@ -189,19 +210,22 @@ export interface RegularizationRequest {
 }
 // In api.ts - Update the Task interface
 
+// In api.ts - Update the Task interface
 export interface Task {
   id: number;
   project_id: number;
-  projectId?: number; // Add this for backend compatibility
+  projectId?: number;
   title: string;
   description?: string;
   status: string;
   priority: string;
-  assigned_to?: number;    // Keep this for frontend compatibility
-  assignee_id?: number;    // Add this to match backend field
+  assigned_to?: number;
+  assignee_id?: number;
   due_date?: string;
   project_name?: string;
   assignee_name?: string;
+  has_publish_date?: boolean; // Add this field
+  publish_date?: string; // Add this field
 }
 
 export interface WeeklyTimesheet {
@@ -215,20 +239,87 @@ export interface WeeklyTimesheet {
     entries: TimesheetEntry[];
   }>;
 }
+export interface ForgotPasswordRequest {
+  email: string;
+}
 
-// Auth API
+export interface VerifyResetTokenRequest {
+  token: string;
+}
+
+export interface ResetPasswordRequest {
+  token: string;
+  newPassword: string;
+}
+
+export interface VerifyResetTokenResponse {
+  valid: boolean;
+  email?: string;
+  message?: string;
+}
+// Update the User interface in api.ts
+export interface User {
+  id: string | number;
+  name: string;
+  email: string;
+  role: string;
+  is_active?: boolean;
+  
+  // Profile fields
+  employee_code?: string;
+  employeeId?: string;
+  employee_id?: string;
+  department?: string;
+  designation?: string;
+  position?: string;
+  phone?: string;
+  location?: string;
+  manager?: string;
+  date_of_birth?: string;
+  date_of_join?: string;
+  hire_date?: string;
+  employment_type?: string;
+  shift?: string;
+  created_at?: string;
+  last_login_at?: string;
+  
+  // Optional fields for UI
+  avatar?: string;
+}
 export const authApi = {
   login: (data: LoginRequest) =>
     apiClient.post<LoginResponse>('/auth/login', data),
 
   getMe: () => apiClient.get<LoginResponse['user']>('/auth/me'),
 
+  // Add these new profile endpoints
+  getProfile: () => apiClient.get<User>('/auth/profile'),
+  
+  updateProfile: (data: { name?: string; email?: string; phone?: string }) =>
+    apiClient.put<{ message: string; user: User }>('/auth/profile', data),
+  
+  changePassword: (data: { currentPassword: string; newPassword: string }) =>
+    apiClient.post<{ message: string }>('/auth/change-password', data),
+
   refresh: () =>
     apiClient.post<{ accessToken: string }>('/auth/refresh'),
 
   logout: () => apiClient.post('/auth/logout'),
-};
 
+  // OTP-based password reset endpoints
+  forgotPassword: (data: ForgotPasswordRequest) =>
+    apiClient.post<{ message: string }>('/auth/forgot-password', data),
+
+  verifyResetToken: (data: VerifyResetTokenRequest) =>
+    apiClient.post<VerifyResetTokenResponse>('/auth/verify-reset-token', data),
+
+  resetPassword: (data: ResetPasswordRequest) =>
+    apiClient.post<{ message: string }>('/auth/reset-password', data),
+
+  // First time password update
+  updateFirstTimePassword: (data: FirstTimePasswordUpdateRequest) =>
+    apiClient.post<{ message: string }>('/auth/first-time-password', data),
+};
 // Add these to the attendanceApi object
 // Update the attendanceApi object
 export const attendanceApi = {
@@ -411,12 +502,21 @@ const formatDateForBackend = (dateString: string | undefined): string | undefine
 
 // Add to taskApi
 // Add to taskApi
+// Add to taskApi
 export const taskApi = {
   getMyTasks: () => apiClient.get<Task[]>('/tasks/me'),
   getProjectTasks: (projectId: number) =>
     apiClient.get<Task[]>(`/tasks/project/${projectId}`),
   
-  create: (data: Partial<Task> & { project_id?: number; projectId?: number; assigned_to?: number; assignee_id?: number; due_date?: string }) => {
+  create: (data: Partial<Task> & { 
+    project_id?: number; 
+    projectId?: number; 
+    assigned_to?: number; 
+    assignee_id?: number; 
+    due_date?: string;
+    hasPublishDate?: boolean;
+    publishDate?: string;
+  }) => {
     // Transform the data to match backend expectations
     const requestData = {
       title: data.title,
@@ -425,7 +525,9 @@ export const taskApi = {
       status: data.status,
       projectId: data.projectId || data.project_id,
       assigneeId: data.assigned_to || data.assignee_id, // Handle both field names
-      dueDate: formatDateForBackend(data.due_date) // Format date to YYYY-MM-DD
+      dueDate: formatDateForBackend(data.due_date), // Format date to YYYY-MM-DD
+      hasPublishDate: data.hasPublishDate, // Add this
+      publishDate: formatDateForBackend(data.publishDate) // Add this
     };
     
     console.log('Transformed task data:', requestData); // For debugging
@@ -433,7 +535,10 @@ export const taskApi = {
     return apiClient.post<Task>('/tasks', requestData);
   },
   
-  update: (id: number, data: Partial<Task>) => {
+  update: (id: number, data: Partial<Task> & {
+    hasPublishDate?: boolean;
+    publishDate?: string;
+  }) => {
     // Transform update data as well
     const requestData = {
       title: data.title,
@@ -441,8 +546,13 @@ export const taskApi = {
       priority: data.priority,
       status: data.status,
       assigneeId: data.assigned_to || data.assignee_id, // Handle both field names
-      dueDate: formatDateForBackend(data.due_date) // Format date to YYYY-MM-DD
+      dueDate: formatDateForBackend(data.due_date), // Format date to YYYY-MM-DD
+      hasPublishDate: data.hasPublishDate, // Add this
+      publishDate: formatDateForBackend(data.publishDate) // Add this
     };
+    
+    console.log('Updating task with data:', requestData); // For debugging
+    
     return apiClient.put<Task>(`/tasks/${id}`, requestData);
   },
   
@@ -492,4 +602,16 @@ export const reportsApi = {
     byEmployee: any[];
     byProject: any[];
   }>('/reports/timesheets', params),
+};
+
+
+export const settingsApi = {
+  getPersonalSettings: () =>
+    apiClient.get<PersonalSettings>('/settings/personal'),
+
+  updatePersonalSettings: (data: Partial<PersonalSettings>) =>
+    apiClient.put<{ message: string; settings: PersonalSettings }>('/settings/personal', data),
+
+  changePassword: (data: ChangePasswordRequest) =>
+    apiClient.post<{ message: string }>('/settings/change-password', data),
 };

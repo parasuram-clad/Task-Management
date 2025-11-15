@@ -53,7 +53,7 @@ export function CompanySettings({ user }: CompanySettingsProps) {
   return (
     <div className="p-6 space-y-6">
       <div>
-        <h1>Company Settings</h1>
+         <h1 className="text-3xl font-bold tracking-tight">Company Settings</h1>
         <p className="text-gray-500">Configure company-wide settings and policies</p>
       </div>
 

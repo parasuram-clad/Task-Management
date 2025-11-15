@@ -1,4 +1,4 @@
-import { ArrowLeft, Mail, Phone, MapPin, Calendar, Briefcase, Edit, Plus, Minus } from 'lucide-react';
+
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../ui/card';
 import { Button } from '../ui/button';
 import { Badge } from '../ui/badge';
@@ -9,7 +9,20 @@ import { useNavigate, useParams } from 'react-router-dom';
 import { useState, useEffect } from 'react';
 import { employeeApi, Employee as ApiEmployee, projectApi, Project, timesheetApi, Timesheet, attendanceApi, TeamAttendanceRecord } from '../../services/api';
 import { toast } from 'sonner';
-
+import { 
+  ArrowLeft, Mail, Phone, MapPin, Calendar, Briefcase, 
+  Edit, Plus, Minus, Trash2, AlertTriangle 
+} from 'lucide-react';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '../ui/alert-dialog';
 interface EmployeeProfileProps {
   user: User;
 }
@@ -46,13 +59,29 @@ export function EmployeeProfile({ user }: EmployeeProfileProps) {
   const [attendanceData, setAttendanceData] = useState<AttendanceRecord[]>([]);
   const [expandedWeek, setExpandedWeek] = useState<string | null>(null);
   const [attendanceDays, setAttendanceDays] = useState<number>(7);
-
+  const [showDeleteDialog, setShowDeleteDialog] = useState(false); // Add this state
+  const [isDeleting, setIsDeleting] = useState(false);
   useEffect(() => {
     if (employeeId) {
       fetchEmployeeData();
     }
   }, [employeeId, attendanceDays]);
-
+ const handleDeleteEmployee = async () => {
+    if (!employee || !employeeId) return;
+    
+    setIsDeleting(true);
+    try {
+      await employeeApi.delete(parseInt(employeeId));
+      toast.success('Employee deleted successfully');
+      navigate('/employees');
+    } catch (error: any) {
+      console.error('Error deleting employee:', error);
+      toast.error(error.message || 'Failed to delete employee');
+    } finally {
+      setIsDeleting(false);
+      setShowDeleteDialog(false);
+    }
+  };
   const fetchEmployeeData = async () => {
     setIsLoading(true);
     try {
@@ -216,6 +245,7 @@ const fetchEmployeeTimesheets = async () => {
 
   // Check if user has permission to edit
   const canEditEmployee = user.role === 'admin' || user.role === 'hr';
+  const canDeleteEmployee = user.role === 'admin' || user.role === 'hr'; 
 
   if (isLoading) {
     return (
@@ -306,16 +336,61 @@ const fetchEmployeeTimesheets = async () => {
                 </div>
               </div>
             </div>
-            {canEditEmployee && (
-              <Button onClick={() => navigate(`/employees/${employeeId}/edit`)}>
-                <Edit className="w-4 h-4 mr-2" />
-                Edit Profile
-              </Button>
-            )}
+           <div className="flex gap-2">
+              {canEditEmployee && (
+                <Button onClick={() => navigate(`/employees/${employeeId}/edit`)}>
+                  <Edit className="w-4 h-4 mr-2" />
+                  Edit Profile
+                </Button>
+              )}
+              {canDeleteEmployee && (
+                <Button 
+                  variant="destructive" 
+                  onClick={() => setShowDeleteDialog(true)}
+                  disabled={isDeleting}
+                >
+                  <Trash2 className="w-4 h-4 mr-2" />
+                  {isDeleting ? 'Deleting...' : 'Delete'}
+                </Button>
+              )}
+            </div>
           </div>
         </CardContent>
       </Card>
-
+ <AlertDialog open={showDeleteDialog} onOpenChange={setShowDeleteDialog}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <div className="flex items-center gap-2">
+              <AlertTriangle className="w-5 h-5 text-destructive" />
+              <AlertDialogTitle>Delete Employee</AlertDialogTitle>
+            </div>
+            <AlertDialogDescription className="pt-4">
+              <div className="space-y-3">
+                <p>
+                  Are you sure you want to delete <strong>{employee?.name}</strong>? 
+                  This action cannot be undone.
+                </p>
+                <div className="bg-amber-50 border border-amber-200 rounded-lg p-3">
+                  <p className="text-sm text-amber-800">
+                    <strong>Note:</strong> This will deactivate the employee account and 
+                    prevent them from logging in. Their historical data will be preserved.
+                  </p>
+                </div>
+              </div>
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={isDeleting}>Cancel</AlertDialogCancel>
+            <AlertDialogAction 
+              onClick={handleDeleteEmployee}
+              disabled={isDeleting}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90 text-white"
+            >
+              {isDeleting ? 'Deleting...' : 'Delete Employee'}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
       {/* Tabs Section with Real Data */}
       <Tabs defaultValue="overview" className="space-y-4">
         <TabsList>

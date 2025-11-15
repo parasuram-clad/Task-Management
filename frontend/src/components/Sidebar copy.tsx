@@ -8,16 +8,15 @@ import {
   BarChart3, 
   Settings, 
   LogOut,
-  ChevronDown,
-  CreditCard
+  ChevronDown
 } from 'lucide-react';
 import { Link, useLocation } from 'react-router-dom';
 import { User, UserRole } from '../App';
 import { Avatar, AvatarFallback, AvatarImage } from './ui/avatar';
 import { Button } from './ui/button';
 import { Separator } from './ui/separator';
-import { useState ,} from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useState } from 'react';
+
 interface SidebarProps {
   user: User;
   onLogout: () => void;
@@ -29,11 +28,10 @@ interface NavItem {
   icon: React.ReactNode;
   path: string;
   roles?: UserRole[];
-  subItems?: { id: string; label: string; path: string; roles?: UserRole[] }[];
+  subItems?: { id: string; label: string; path: string }[];
 }
 
 export function Sidebar({ user, onLogout }: SidebarProps) {
-   const navigate = useNavigate();
   const location = useLocation();
   const [expandedItems, setExpandedItems] = useState<Set<string>>(new Set());
 
@@ -43,33 +41,16 @@ export function Sidebar({ user, onLogout }: SidebarProps) {
       label: 'Dashboard',
       icon: <LayoutDashboard className="w-5 h-5" />,
       path: '/dashboard',
-      roles: ['employee', 'manager', 'hr', 'admin', 'finance'],
     },
     {
       id: 'attendance',
       label: 'Attendance',
       icon: <Clock className="w-5 h-5" />,
       path: '/attendance/my-attendance',
-      roles: ['employee', 'manager', 'hr', 'admin'],
       subItems: [
-        { 
-          id: 'my-attendance', 
-          label: 'My Attendance', 
-          path: '/attendance/my-attendance',
-          roles: ['employee', 'manager', 'hr', 'admin']
-        },
-        { 
-          id: 'attendance-calendar', 
-          label: 'Calendar View', 
-          path: '/attendance/calendar',
-          roles: ['employee', 'manager', 'hr', 'admin']
-        },
-        { 
-          id: 'team-attendance', 
-          label: 'Team Attendance', 
-          path: '/attendance/team',
-          roles: ['manager', 'hr', 'admin']
-        },
+        { id: 'my-attendance', label: 'My Attendance', path: '/attendance/my-attendance' },
+        { id: 'attendance-calendar', label: 'Calendar View', path: '/attendance/calendar' },
+        { id: 'team-attendance', label: 'Team Attendance', path: '/attendance/team' },
       ],
     },
     {
@@ -77,20 +58,9 @@ export function Sidebar({ user, onLogout }: SidebarProps) {
       label: 'Timesheet',
       icon: <FileText className="w-5 h-5" />,
       path: '/timesheet/my-timesheet',
-      roles: ['employee', 'manager', 'hr', 'admin', 'finance'],
       subItems: [
-        { 
-          id: 'my-timesheet', 
-          label: 'My Timesheet', 
-          path: '/timesheet/my-timesheet',
-          roles: ['employee', 'manager', 'hr', 'admin', 'finance']
-        },
-        { 
-          id: 'timesheet-approval', 
-          label: 'Approvals', 
-          path: '/timesheet/approval',
-          roles: ['manager', 'hr', 'admin']
-        },
+        { id: 'my-timesheet', label: 'My Timesheet', path: '/timesheet/my-timesheet' },
+        { id: 'timesheet-approval', label: 'Approvals', path: '/timesheet/approval' },
       ],
     },
     {
@@ -98,27 +68,15 @@ export function Sidebar({ user, onLogout }: SidebarProps) {
       label: 'Projects',
       icon: <FolderKanban className="w-5 h-5" />,
       path: '/projects',
-      roles: ['employee', 'manager', 'hr', 'admin'],
     },
     {
       id: 'tasks',
       label: 'Tasks',
       icon: <CheckSquare className="w-5 h-5" />,
       path: '/tasks/my-tasks',
-      roles: ['employee', 'manager', 'hr', 'admin'],
       subItems: [
-        { 
-          id: 'my-tasks', 
-          label: 'My Tasks', 
-          path: '/tasks/my-tasks',
-          roles: ['employee', 'manager', 'hr', 'admin']
-        },
-        { 
-          id: 'project-tasks', 
-          label: 'Project Tasks', 
-          path: '/tasks/project-grid',
-          roles: ['manager', 'hr', 'admin','employee']
-        },
+        { id: 'my-tasks', label: 'My Tasks', path: '/tasks/my-tasks' },
+        { id: 'project-tasks', label: 'Project Tasks', path: '/tasks/project-grid' },
       ],
     },
     {
@@ -133,42 +91,20 @@ export function Sidebar({ user, onLogout }: SidebarProps) {
       label: 'Reports',
       icon: <BarChart3 className="w-5 h-5" />,
       path: '/reports/attendance',
-      roles: ['hr', 'admin', 'manager', 'finance'],
+      roles: ['hr', 'admin', 'manager'],
       subItems: [
-        { 
-          id: 'attendance-report', 
-          label: 'Attendance Report', 
-          path: '/reports/attendance',
-          roles: ['hr', 'admin', 'manager']
-        },
-        { 
-          id: 'timesheet-report', 
-          label: 'Timesheet Report', 
-          path: '/reports/timesheet',
-          roles: ['hr', 'admin', 'manager', 'finance']
-        },
+        { id: 'attendance-report', label: 'Attendance Report', path: '/reports/attendance' },
+        { id: 'timesheet-report', label: 'Timesheet Report', path: '/reports/timesheet' },
       ],
     },
- 
     {
       id: 'settings',
       label: 'Settings',
       icon: <Settings className="w-5 h-5" />,
       path: '/settings/personal',
-      roles: ['employee', 'manager', 'hr', 'admin', 'finance'],
       subItems: [
-        { 
-          id: 'personal-settings', 
-          label: 'Personal Settings', 
-          path: '/settings/personal',
-          roles: ['employee', 'manager', 'hr', 'admin', 'finance']
-        },
-        { 
-          id: 'company-settings', 
-          label: 'Company Settings', 
-          path: '/settings/company',
-          roles: ['admin']
-        },
+        { id: 'personal-settings', label: 'Personal Settings', path: '/settings/personal' },
+        { id: 'company-settings', label: 'Company Settings', path: '/settings/company' },
       ],
     },
   ];
@@ -176,13 +112,6 @@ export function Sidebar({ user, onLogout }: SidebarProps) {
   const hasAccess = (item: NavItem) => {
     if (!item.roles) return true;
     return item.roles.includes(user.role);
-  };
-
-  const hasSubItemAccess = (subItems: { id: string; label: string; path: string; roles?: UserRole[] }[]) => {
-    return subItems.some(subItem => {
-      if (!subItem.roles) return true;
-      return subItem.roles.includes(user.role);
-    });
   };
 
   const getInitials = (name: string) => {
@@ -201,9 +130,7 @@ export function Sidebar({ user, onLogout }: SidebarProps) {
   const isParentActive = (item: NavItem) => {
     if (isActive(item.path)) return true;
     if (item.subItems) {
-      return item.subItems.some(subItem => 
-        subItem.roles?.includes(user.role) && isActive(subItem.path)
-      );
+      return item.subItems.some(subItem => isActive(subItem.path));
     }
     return false;
   };
@@ -222,7 +149,7 @@ export function Sidebar({ user, onLogout }: SidebarProps) {
   useState(() => {
     const autoExpanded = new Set();
     navItems.forEach(item => {
-      if (item.subItems && isParentActive(item) && hasAccess(item)) {
+      if (item.subItems && isParentActive(item)) {
         autoExpanded.add(item.id);
       }
     });
@@ -237,20 +164,16 @@ export function Sidebar({ user, onLogout }: SidebarProps) {
       
       <Separator />
       
-
-<div 
-  className="p-4 flex items-center gap-3 cursor-pointer hover:bg-gray-50 rounded-lg transition-colors"
-  onClick={() => navigate('/profile')}
->
-  <Avatar>
-    <AvatarImage src={user.avatar} />
-    <AvatarFallback>{getInitials(user.name)}</AvatarFallback>
-  </Avatar>
-  <div className="flex-1 min-w-0">
-    <p className="truncate font-medium">{user.name}</p>
-    <p className="text-gray-500 text-sm capitalize">{user.role}</p>
-  </div>
-</div>
+      <div className="p-4 flex items-center gap-3">
+        <Avatar>
+          <AvatarImage src={user.avatar} />
+          <AvatarFallback>{getInitials(user.name)}</AvatarFallback>
+        </Avatar>
+        <div className="flex-1 min-w-0">
+          <p className="truncate">{user.name}</p>
+          <p className="text-gray-500 text-sm capitalize">{user.role}</p>
+        </div>
+      </div>
       
       <Separator />
       
@@ -260,7 +183,7 @@ export function Sidebar({ user, onLogout }: SidebarProps) {
           
           const active = isParentActive(item);
           const isExpanded = expandedItems.has(item.id);
-          const hasSubItems = item.subItems && item.subItems.length > 0 && hasSubItemAccess(item.subItems);
+          const hasSubItems = item.subItems && item.subItems.length > 0;
 
           return (
             <div key={item.id} className="mb-1">
@@ -297,20 +220,16 @@ export function Sidebar({ user, onLogout }: SidebarProps) {
               {/* Submenu items */}
               {hasSubItems && isExpanded && (
                 <div className="ml-8 mt-1 space-y-1 animate-in fade-in-50 slide-in-from-top-2 duration-200">
-                  {item.subItems.map(subItem => {
-                    if (subItem.roles && !subItem.roles.includes(user.role)) return null;
-                    
-                    return (
-                      <Link key={subItem.id} to={subItem.path}>
-                        <Button
-                          variant={isActive(subItem.path) ? "secondary" : "ghost"}
-                          className="w-full justify-start text-sm transition-all duration-200 hover:pl-4"
-                        >
-                          {subItem.label}
-                        </Button>
-                      </Link>
-                    );
-                  })}
+                  {item.subItems.map(subItem => (
+                    <Link key={subItem.id} to={subItem.path}>
+                      <Button
+                        variant={isActive(subItem.path) ? "secondary" : "ghost"}
+                        className="w-full justify-start text-sm transition-all duration-200 hover:pl-4"
+                      >
+                        {subItem.label}
+                      </Button>
+                    </Link>
+                  ))}
                 </div>
               )}
             </div>

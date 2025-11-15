@@ -45,18 +45,18 @@ if (process.env.NODE_ENV !== 'production') {
   app.use(morgan('dev'));
 }
 
-const authLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000,
-  max: 20,
-  message: 'Too many login attempts from this IP, please try again later.',
-});
-app.use('/api/auth', authLimiter);
+// const authLimiter = rateLimit({
+//   windowMs: 15 * 60 * 1000,
+//   max: 20,
+//   message: 'Too many login attempts from this IP, please try again later.',
+// });
+// app.use('/api/auth', authLimiter);
 
-const apiLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000,
-  max: 1000,
-});
-app.use('/api/', apiLimiter);
+// const apiLimiter = rateLimit({
+//   windowMs: 15 * 60 * 1000,
+//   max: 1000,
+// });
+// app.use('/api/', apiLimiter);
 
 // Passport SSO
 app.use(passport.initialize());

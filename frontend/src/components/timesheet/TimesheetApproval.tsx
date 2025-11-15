@@ -287,7 +287,7 @@ export function TimesheetApproval({ user }: TimesheetApprovalProps) {
     <div className="p-6 space-y-6">
       <div className="flex justify-between items-center">
         <div>
-          <h1 className="text-2xl font-bold">Timesheet Approvals</h1>
+            <h1 className="text-3xl font-bold tracking-tight">Timesheet Approvals</h1>
           <p className="text-gray-500">Review and manage all team timesheets</p>
         </div>
         <Button onClick={fetchTimesheets} variant="outline" size="sm">

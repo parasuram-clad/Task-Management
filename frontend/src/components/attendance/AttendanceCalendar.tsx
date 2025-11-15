@@ -275,7 +275,7 @@ export function AttendanceCalendar({ user }: AttendanceCalendarProps) {
   return (
     <div className="p-6 space-y-6">
       <div>
-        <h1>Attendance Calendar</h1>
+         <h1 className="text-3xl font-bold tracking-tight">Attendance Calendar</h1>
         <p className="text-gray-500">View your monthly attendance</p>
       </div>
 

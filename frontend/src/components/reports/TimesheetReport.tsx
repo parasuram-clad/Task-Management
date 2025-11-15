@@ -446,7 +446,7 @@ export function TimesheetReport({ user }: TimesheetReportProps) {
   return (
     <div className="p-6 space-y-6">
       <div>
-        <h1 className="text-2xl font-bold">Timesheet Report</h1>
+          <h1 className="text-3xl font-bold tracking-tight">Timesheet Report</h1>
         <p className="text-gray-500">Analyze time allocation and project hours</p>
       </div>
 
