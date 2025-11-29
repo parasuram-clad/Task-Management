@@ -1,346 +1,531 @@
-import React, { useState } from 'react';
-import { Eye, EyeOff, Settings, Building2, Shield, Users2, TrendingUp, ArrowLeft, Mail, Key, CheckCircle } from 'lucide-react';
+import { useState, useEffect } from 'react';
+import { Eye, EyeOff, Settings, Mail, Lock, AlertCircle } from 'lucide-react';
 import { Button } from '../ui/button';
 import { Input } from '../ui/input';
 import { Label } from '../ui/label';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../ui/card';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from '../ui/dialog';
-import { toast } from 'sonner';
-import { authApi } from '../../services/auth-api';
-import { setApiBaseUrl, getApiBaseUrl, ApiError, initializeApiClient } from '../../services/api-client';
+import { toast } from 'sonner@2.0.3';
 import { User } from '../../App';
+import { authApi } from '../../services/api';
+import { apiConfig } from '../../services/api-config';
+import { ApiError } from '../../services/api-client';
 
 interface LoginPageProps {
   onLogin: (user: User) => void;
 }
-
-type ForgotPasswordStep = 'email' | 'verification' | 'reset' | 'success';
 
 export function LoginPage({ onLogin }: LoginPageProps) {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
-  const [apiBaseUrl, setApiBaseUrlState] = useState(getApiBaseUrl() || '');
+  const [apiBaseUrl, setApiBaseUrl] = useState(apiConfig.getBaseUrl() || '');
   const [showApiDialog, setShowApiDialog] = useState(false);
-  const [showForgotPasswordDialog, setShowForgotPasswordDialog] = useState(false);
-  const [forgotPasswordStep, setForgotPasswordStep] = useState<ForgotPasswordStep>('email');
+  const [showForgotPassword, setShowForgotPassword] = useState(false);
   const [forgotPasswordEmail, setForgotPasswordEmail] = useState('');
+  const [isSendingOTP, setIsSendingOTP] = useState(false);
   const [otp, setOtp] = useState('');
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
-  const [isForgotPasswordLoading, setIsForgotPasswordLoading] = useState(false);
+  const [step, setStep] = useState<'email' | 'otp' | 'reset'>('email');
+  const [resetToken, setResetToken] = useState('');
+  
+  // First time login modal state
+  const [showFirstTimeLogin, setShowFirstTimeLogin] = useState(false);
+  const [firstTimeUser, setFirstTimeUser] = useState<User | null>(null);
+  const [firstTimeNewPassword, setFirstTimeNewPassword] = useState('');
+  const [firstTimeConfirmPassword, setFirstTimeConfirmPassword] = useState('');
+  const [isUpdatingPassword, setIsUpdatingPassword] = useState(false);
 
-  // Initialize API client on component mount
-  React.useEffect(() => {
-    initializeApiClient();
-  }, []);
+  // Separate error message states for each component
+  const [loginErrorMessage, setLoginErrorMessage] = useState('');
+  const [forgotPasswordErrorMessage, setForgotPasswordErrorMessage] = useState('');
+  const [firstTimeLoginErrorMessage, setFirstTimeLoginErrorMessage] = useState('');
+  const [apiConfigErrorMessage, setApiConfigErrorMessage] = useState('');
+
+  // Mock users for demo
+  const mockUsers: Record<string, User> = {
+    'employee@company.com': {
+      id: '1',
+      name: 'John Doe',
+      email: 'employee@company.com',
+      role: 'employee',
+      employeeId: 'EMP001',
+      department: 'Engineering',
+      designation: 'Software Engineer',
+    },
+    'manager@company.com': {
+      id: '2',
+      name: 'Sarah Johnson',
+      email: 'manager@company.com',
+      role: 'manager',
+      employeeId: 'EMP002',
+      department: 'Engineering',
+      designation: 'Engineering Manager',
+    },
+    'hr@company.com': {
+      id: '3',
+      name: 'Mike Wilson',
+      email: 'hr@company.com',
+      role: 'hr',
+      employeeId: 'HR001',
+      department: 'Human Resources',
+      designation: 'HR Manager',
+    },
+    'admin@company.com': {
+      id: '4',
+      name: 'Admin User',
+      email: 'admin@company.com',
+      role: 'admin',
+      employeeId: 'ADM001',
+      department: 'Administration',
+      designation: 'System Admin',
+    },
+  };
+
+  // Clear login error when user starts typing
+  useEffect(() => {
+    if (loginErrorMessage) {
+      setLoginErrorMessage('');
+    }
+  }, [email, password]);
+
+  // Clear forgot password error when dialog opens/closes or step changes
+  useEffect(() => {
+    if (showForgotPassword) {
+      setForgotPasswordErrorMessage('');
+    }
+  }, [showForgotPassword, step]);
+
+  // Clear first time login error when dialog opens/closes
+  useEffect(() => {
+    if (showFirstTimeLogin) {
+      setFirstTimeLoginErrorMessage('');
+    }
+  }, [showFirstTimeLogin]);
+
+  // First time login functions
+  const handleFirstTimeLogin = async (e: React.FormEvent) => {
+    e.preventDefault();
+    
+    if (firstTimeNewPassword !== firstTimeConfirmPassword) {
+      setFirstTimeLoginErrorMessage('Passwords do not match');
+      return;
+    }
+
+    if (firstTimeNewPassword.length < 8) {
+      setFirstTimeLoginErrorMessage('Password must be at least 8 characters long');
+      return;
+    }
+
+    setIsUpdatingPassword(true);
+    setFirstTimeLoginErrorMessage('');
+
+    if (!apiConfig.hasBaseUrl()) {
+      // Mock password update
+      setTimeout(() => {
+        toast.success('Password updated successfully!');
+        if (firstTimeUser) {
+          localStorage.setItem(`firstTime_${firstTimeUser.email}`, 'false');
+          onLogin(firstTimeUser);
+        }
+        setShowFirstTimeLogin(false);
+        resetFirstTimeLoginState();
+        setIsUpdatingPassword(false);
+      }, 1000);
+      return;
+    }
+
+    try {
+      await authApi.updateFirstTimePassword({
+        email: firstTimeUser?.email || '',
+        newPassword: firstTimeNewPassword
+      });
+      
+      toast.success('Password updated successfully! You can now login with your new password.');
+      if (firstTimeUser) {
+        onLogin(firstTimeUser);
+      }
+      setShowFirstTimeLogin(false);
+      resetFirstTimeLoginState();
+    } catch (error: any) {
+      console.log('First time password update error:', error);
+      
+      let errorMsg = 'Failed to update password. Please try again.';
+      
+      if (error instanceof ApiError) {
+        errorMsg = error.message;
+      } else if (error.response?.data?.message) {
+        errorMsg = error.response.data.message;
+      } else if (error.message) {
+        errorMsg = error.message;
+      }
+      
+      setFirstTimeLoginErrorMessage(errorMsg);
+    } finally {
+      setIsUpdatingPassword(false);
+    }
+  };
+
+  const resetFirstTimeLoginState = () => {
+    setFirstTimeNewPassword('');
+    setFirstTimeConfirmPassword('');
+    setFirstTimeUser(null);
+    setFirstTimeLoginErrorMessage('');
+  };
+
+  const handleFirstTimeDialogClose = (open: boolean) => {
+    if (!open) {
+      resetFirstTimeLoginState();
+    }
+    setShowFirstTimeLogin(open);
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsLoading(true);
+    setLoginErrorMessage(''); // Clear previous errors
 
+    // Check if API is configured
+    if (!apiConfig.hasBaseUrl()) {
+      // Use mock login
+      setTimeout(() => {
+        const user = mockUsers[email.toLowerCase()];
+        
+        if (user) {
+          if (password === 'password') {
+            const isFirstTimeLogin = localStorage.getItem(`firstTime_${email}`) === 'true' || 
+                                    password === 'temp123';
+            
+            if (isFirstTimeLogin) {
+              setFirstTimeUser(user);
+              setShowFirstTimeLogin(true);
+              setLoginErrorMessage('Please set your new password to continue');
+            } else {
+              setLoginErrorMessage(''); // Clear error on success
+              toast.success(`Welcome back, ${user.name}! (Mock Mode)`);
+              onLogin(user);
+            }
+          } else {
+            setLoginErrorMessage('Incorrect password. Try "password" for demo accounts.');
+          }
+        } else {
+          setLoginErrorMessage('Invalid email address. Try one of the demo emails below.');
+        }
+        
+        setIsLoading(false);
+      }, 1000);
+      return;
+    }
+
+    // Use real API
     try {
       const response = await authApi.login({ email, password });
       
-      const user: User = {
-        id: response.user.id,
-        name: response.user.name,
-        email: response.user.email,
-        role: response.user.role as User['role'],
-        employeeId: response.user.employeeId || `EMP${response.user.id.padStart(3, '0')}`,
-        department: 'Department',
-        designation: 'Position',
-        is_super_admin: response.user.isSuperAdmin,
-      };
-      
-      toast.success(`Welcome back, ${user.name}!`);
-      onLogin(user);
-    } catch (error) {
-      if (error instanceof ApiError) {
-        toast.error(error.message);
+      if (response.requiresPasswordChange) {
+        apiConfig.setAccessToken(response.accessToken);
+        
+        const user: User = {
+          id: response.user.id.toString(),
+          name: response.user.name,
+          email: response.user.email,
+          role: response.user.role as User['role'],
+          employeeId: `EMP${response.user.id.toString().padStart(3, '0')}`,
+          department: 'Department',
+          designation: 'Position',
+        };
+        
+        setFirstTimeUser(user);
+        setShowFirstTimeLogin(true);
+        setLoginErrorMessage('Please set your new password to continue');
       } else {
-        toast.error('Login failed. Please try again.');
+        apiConfig.setAccessToken(response.accessToken);
+        
+        const user: User = {
+          id: response.user.id.toString(),
+          name: response.user.name,
+          email: response.user.email,
+          role: response.user.role as User['role'],
+          employeeId: `EMP${response.user.id.toString().padStart(3, '0')}`,
+          department: 'Department',
+          designation: 'Position',
+        };
+        
+        setLoginErrorMessage(''); // Clear error on success
+        toast.success(`Welcome back, ${user.name}!`);
+        onLogin(user);
       }
+    } catch (error: any) {
+      console.log('Login error:', error);
+      
+      let errorMsg = 'Login failed. Please try again.';
+      
+      if (error instanceof ApiError) {
+        errorMsg = error.message;
+      } else if (error.response?.data?.message) {
+        errorMsg = error.response.data.message;
+      } else if (error.message) {
+        errorMsg = error.message;
+      }
+      
+      setLoginErrorMessage(errorMsg);
     } finally {
       setIsLoading(false);
     }
+  };
+
+  const handleSendOTP = async (e: React.FormEvent) => {
+    e.preventDefault();
+    
+    if (!forgotPasswordEmail.trim()) {
+      setForgotPasswordErrorMessage('Please enter your email address');
+      return;
+    }
+
+    setIsSendingOTP(true);
+    setForgotPasswordErrorMessage('');
+
+    if (!apiConfig.hasBaseUrl()) {
+      setTimeout(() => {
+        setForgotPasswordErrorMessage(`OTP sent to ${forgotPasswordEmail} (Mock Mode)`);
+        setStep('otp');
+        setIsSendingOTP(false);
+      }, 1000);
+      return;
+    }
+
+    try {
+      await authApi.forgotPassword({ email: forgotPasswordEmail });
+      setForgotPasswordErrorMessage('OTP sent to your email');
+      setStep('otp');
+    } catch (error: any) {
+      console.log('Forgot password error:', error);
+      
+      let errorMsg = 'Failed to send OTP. Please try again.';
+      
+      if (error instanceof ApiError) {
+        errorMsg = error.message;
+      } else if (error.response?.data?.message) {
+        errorMsg = error.response.data.message;
+      } else if (error.message) {
+        errorMsg = error.message;
+      }
+      
+      setForgotPasswordErrorMessage(errorMsg);
+    } finally {
+      setIsSendingOTP(false);
+    }
+  };
+
+  const handleVerifyOTP = async (e: React.FormEvent) => {
+    e.preventDefault();
+    
+    if (!otp.trim()) {
+      setForgotPasswordErrorMessage('Please enter the OTP');
+      return;
+    }
+
+    setIsSendingOTP(true);
+    setForgotPasswordErrorMessage('');
+
+    if (!apiConfig.hasBaseUrl()) {
+      setTimeout(() => {
+        if (otp === '123456') {
+          setForgotPasswordErrorMessage('OTP verified successfully');
+          setStep('reset');
+          setResetToken('mock-reset-token');
+        } else {
+          setForgotPasswordErrorMessage('Invalid OTP. Please try again.');
+        }
+        setIsSendingOTP(false);
+      }, 1000);
+      return;
+    }
+
+    try {
+      const response = await authApi.verifyResetToken({ token: otp });
+      if (response.valid) {
+        setForgotPasswordErrorMessage('OTP verified successfully');
+        setStep('reset');
+        setResetToken(otp);
+      } else {
+        setForgotPasswordErrorMessage('Invalid OTP');
+      }
+    } catch (error: any) {
+      console.log('Verify OTP error:', error);
+      
+      let errorMsg = 'Failed to verify OTP. Please try again.';
+      
+      if (error instanceof ApiError) {
+        errorMsg = error.message;
+      } else if (error.response?.data?.message) {
+        errorMsg = error.response.data.message;
+      } else if (error.message) {
+        errorMsg = error.message;
+      }
+      
+      setForgotPasswordErrorMessage(errorMsg);
+    } finally {
+      setIsSendingOTP(false);
+    }
+  };
+
+  const handleResetPassword = async (e: React.FormEvent) => {
+    e.preventDefault();
+    
+    if (newPassword !== confirmPassword) {
+      setForgotPasswordErrorMessage('Passwords do not match');
+      return;
+    }
+
+    if (newPassword.length < 8) {
+      setForgotPasswordErrorMessage('Password must be at least 8 characters long');
+      return;
+    }
+
+    setIsSendingOTP(true);
+    setForgotPasswordErrorMessage('');
+
+    if (!apiConfig.hasBaseUrl()) {
+      setTimeout(() => {
+        setForgotPasswordErrorMessage('Password reset successfully!');
+        setShowForgotPassword(false);
+        resetForgotPasswordState();
+        setIsSendingOTP(false);
+      }, 1000);
+      return;
+    }
+
+    try {
+      await authApi.resetPassword({ 
+        token: resetToken, 
+        newPassword 
+      });
+      setForgotPasswordErrorMessage('Password reset successfully! You can now login with your new password.');
+      setShowForgotPassword(false);
+      resetForgotPasswordState();
+    } catch (error: any) {
+      console.log('Reset password error:', error);
+      
+      let errorMsg = 'Failed to reset password. Please try again.';
+      
+      if (error instanceof ApiError) {
+        errorMsg = error.message;
+      } else if (error.response?.data?.message) {
+        errorMsg = error.response.data.message;
+      } else if (error.message) {
+        errorMsg = error.message;
+      }
+      
+      setForgotPasswordErrorMessage(errorMsg);
+    } finally {
+      setIsSendingOTP(false);
+    }
+  };
+
+  const resetForgotPasswordState = () => {
+    setForgotPasswordEmail('');
+    setOtp('');
+    setNewPassword('');
+    setConfirmPassword('');
+    setStep('email');
+    setResetToken('');
+    setForgotPasswordErrorMessage('');
+  };
+
+  const handleDialogClose = (open: boolean) => {
+    if (!open) {
+      resetForgotPasswordState();
+    }
+    setShowForgotPassword(open);
   };
 
   const handleSaveApiUrl = () => {
     if (apiBaseUrl.trim()) {
       try {
         new URL(apiBaseUrl);
-        setApiBaseUrl(apiBaseUrl);
+        apiConfig.setBaseUrl(apiBaseUrl);
         setShowApiDialog(false);
-        toast.success('API URL saved. You can now login with your credentials.');
+        setApiConfigErrorMessage('API URL saved. You can now login with your credentials.');
+        // Clear the message after 3 seconds
+        setTimeout(() => {
+          setApiConfigErrorMessage('');
+        }, 3000);
       } catch {
-        toast.error('Please enter a valid URL');
+        setApiConfigErrorMessage('Please enter a valid URL');
       }
     }
   };
 
-  const handleForgotPassword = async () => {
-    if (!forgotPasswordEmail) {
-      toast.error('Please enter your email address');
-      return;
-    }
-
-    setIsForgotPasswordLoading(true);
-    try {
-      await authApi.forgotPassword({ email: forgotPasswordEmail });
-      setForgotPasswordStep('verification');
-      toast.success('OTP sent to your email');
-    } catch (error) {
-      toast.error('Failed to send OTP. Please try again.');
-    } finally {
-      setIsForgotPasswordLoading(false);
-    }
-  };
-
-  const handleVerifyOtp = async () => {
-    if (!otp || otp.length !== 6) {
-      toast.error('Please enter a valid 6-digit OTP');
-      return;
-    }
-
-    setIsForgotPasswordLoading(true);
-    try {
-      // Verify OTP with the backend
-      await authApi.verifyEmail({ email: forgotPasswordEmail, otp });
-      setForgotPasswordStep('reset');
-      toast.success('OTP verified successfully');
-    } catch (error) {
-      toast.error('Invalid OTP. Please try again.');
-    } finally {
-      setIsForgotPasswordLoading(false);
-    }
-  };
-
-  const handleResetPassword = async () => {
-    if (!newPassword || !confirmPassword) {
-      toast.error('Please fill in all fields');
-      return;
-    }
-
-    if (newPassword.length < 8) {
-      toast.error('Password must be at least 8 characters long');
-      return;
-    }
-
-    if (newPassword !== confirmPassword) {
-      toast.error('Passwords do not match');
-      return;
-    }
-
-    setIsForgotPasswordLoading(true);
-    try {
-      await authApi.resetPassword({
-        email: forgotPasswordEmail,
-        otp,
-        newPassword
-      });
-      setForgotPasswordStep('success');
-      toast.success('Password reset successfully');
-    } catch (error) {
-      toast.error('Failed to reset password. Please try again.');
-    } finally {
-      setIsForgotPasswordLoading(false);
-    }
-  };
-
-  const handleCloseForgotPassword = () => {
-    setShowForgotPasswordDialog(false);
-    // Reset all states after a delay to allow the dialog to close smoothly
-    setTimeout(() => {
-      setForgotPasswordStep('email');
-      setForgotPasswordEmail('');
-      setOtp('');
-      setNewPassword('');
-      setConfirmPassword('');
-    }, 300);
-  };
-
-  const renderForgotPasswordContent = () => {
-    switch (forgotPasswordStep) {
-      case 'email':
-        return (
-          <div className="space-y-4">
-            <div>
-              <Label htmlFor="forgot-email">Email Address</Label>
+  return (
+    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-blue-50 to-indigo-100 p-4">
+      {/* First Time Login Dialog */}
+      <Dialog open={showFirstTimeLogin} onOpenChange={handleFirstTimeDialogClose}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Welcome to HR & Project Hub!</DialogTitle>
+            <DialogDescription>
+              This is your first time logging in. Please set your new password to continue.
+            </DialogDescription>
+          </DialogHeader>
+          
+          {/* First time login error message */}
+          {firstTimeLoginErrorMessage && (
+            <div className="flex items-center gap-2 p-3 text-sm text-red-600 bg-red-50 rounded-md">
+              <AlertCircle className="w-4 h-4" />
+              <span>{firstTimeLoginErrorMessage}</span>
+            </div>
+          )}
+          
+          <form onSubmit={handleFirstTimeLogin} className="space-y-4">
+            <div className="space-y-2">
+              <Label htmlFor="new-password-first">New Password</Label>
               <Input
-                id="forgot-email"
-                type="email"
-                placeholder="Enter your email address"
-                value={forgotPasswordEmail}
-                onChange={(e) => setForgotPasswordEmail(e.target.value)}
-                className="mt-1"
-              />
-            </div>
-            <Button 
-              onClick={handleForgotPassword} 
-              className="w-full"
-              disabled={isForgotPasswordLoading}
-            >
-              {isForgotPasswordLoading ? (
-                <>Sending OTP...</>
-              ) : (
-                <>
-                  <Mail className="w-4 h-4 mr-2" />
-                  Send OTP
-                </>
-              )}
-            </Button>
-          </div>
-        );
-
-      case 'verification':
-        return (
-          <div className="space-y-4">
-            <div className="text-center">
-              <Mail className="w-12 h-12 text-primary mx-auto mb-2" />
-              <p className="text-sm text-muted-foreground">
-                We sent a 6-digit verification code to<br />
-                <strong>{forgotPasswordEmail}</strong>
-              </p>
-            </div>
-            <div>
-              <Label htmlFor="otp">Verification Code</Label>
-              <Input
-                id="otp"
-                type="text"
-                placeholder="Enter 6-digit code"
-                value={otp}
-                onChange={(e) => setOtp(e.target.value.replace(/\D/g, '').slice(0, 6))}
-                className="mt-1 text-center text-lg font-mono tracking-widest"
-                maxLength={6}
-              />
-            </div>
-            <div className="flex gap-2">
-              <Button
-                variant="outline"
-                onClick={() => setForgotPasswordStep('email')}
-                className="flex-1"
-              >
-                <ArrowLeft className="w-4 h-4 mr-2" />
-                Back
-              </Button>
-              <Button 
-                onClick={handleVerifyOtp}
-                className="flex-1"
-                disabled={isForgotPasswordLoading || otp.length !== 6}
-              >
-                {isForgotPasswordLoading ? 'Verifying...' : 'Verify Code'}
-              </Button>
-            </div>
-          </div>
-        );
-
-      case 'reset':
-        return (
-          <div className="space-y-4">
-            <div className="text-center">
-              <Key className="w-12 h-12 text-primary mx-auto mb-2" />
-              <p className="text-sm text-muted-foreground">
-                Create your new password
-              </p>
-            </div>
-            <div>
-              <Label htmlFor="new-password">New Password</Label>
-              <Input
-                id="new-password"
+                id="new-password-first"
                 type="password"
                 placeholder="Enter new password"
-                value={newPassword}
-                onChange={(e) => setNewPassword(e.target.value)}
-                className="mt-1"
+                value={firstTimeNewPassword}
+                onChange={(e) => setFirstTimeNewPassword(e.target.value)}
+                required
+                minLength={8}
               />
-            </div>
-            <div>
-              <Label htmlFor="confirm-password">Confirm Password</Label>
-              <Input
-                id="confirm-password"
-                type="password"
-                placeholder="Confirm new password"
-                value={confirmPassword}
-                onChange={(e) => setConfirmPassword(e.target.value)}
-                className="mt-1"
-              />
-            </div>
-            <div className="flex gap-2">
-              <Button
-                variant="outline"
-                onClick={() => setForgotPasswordStep('verification')}
-                className="flex-1"
-              >
-                <ArrowLeft className="w-4 h-4 mr-2" />
-                Back
-              </Button>
-              <Button 
-                onClick={handleResetPassword}
-                className="flex-1"
-                disabled={isForgotPasswordLoading}
-              >
-                {isForgotPasswordLoading ? 'Resetting...' : 'Reset Password'}
-              </Button>
-            </div>
-          </div>
-        );
-
-      case 'success':
-        return (
-          <div className="text-center space-y-4">
-            <CheckCircle className="w-16 h-16 text-green-500 mx-auto" />
-            <div>
-              <h3 className="text-lg font-semibold">Password Reset Successful!</h3>
-              <p className="text-sm text-muted-foreground mt-1">
-                Your password has been reset successfully. You can now login with your new password.
+              <p className="text-xs text-gray-500">
+                Password must be at least 8 characters long
               </p>
             </div>
-            <Button 
-              onClick={handleCloseForgotPassword}
-              className="w-full"
-            >
-              Back to Login
-            </Button>
-          </div>
-        );
-    }
-  };
+            
+            <div className="space-y-2">
+              <Label htmlFor="confirm-password-first">Confirm Password</Label>
+              <Input
+                id="confirm-password-first"
+                type="password"
+                placeholder="Confirm new password"
+                value={firstTimeConfirmPassword}
+                onChange={(e) => setFirstTimeConfirmPassword(e.target.value)}
+                required
+              />
+            </div>
+            
+            <div className="flex gap-2">
+              <Button 
+                type="submit" 
+                className="flex-1" 
+                disabled={isUpdatingPassword || firstTimeNewPassword.length < 8 || firstTimeNewPassword !== firstTimeConfirmPassword}
+              >
+                <Lock className="w-4 h-4 mr-2" />
+                {isUpdatingPassword ? 'Updating...' : 'Set Password & Login'}
+              </Button>
+            </div>
+          </form>
+        </DialogContent>
+      </Dialog>
 
-  const getForgotPasswordTitle = () => {
-    switch (forgotPasswordStep) {
-      case 'email': return 'Forgot Password';
-      case 'verification': return 'Verify Your Email';
-      case 'reset': return 'Create New Password';
-      case 'success': return 'Success!';
-      default: return 'Forgot Password';
-    }
-  };
-
-  const getForgotPasswordDescription = () => {
-    switch (forgotPasswordStep) {
-      case 'email': return 'Enter your email address to receive a verification code';
-      case 'verification': return 'Enter the 6-digit code sent to your email';
-      case 'reset': return 'Enter your new password below';
-      case 'success': return 'Your password has been reset successfully';
-      default: return '';
-    }
-  };
-
-  return (
-    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-blue-50 via-indigo-50 to-purple-50 p-4 relative overflow-hidden">
-      {/* Background decoration */}
-      <div className="absolute inset-0 overflow-hidden">
-        <div className="absolute -top-40 -right-40 w-80 h-80 bg-blue-400/20 rounded-full blur-3xl"></div>
-        <div className="absolute -bottom-40 -left-40 w-80 h-80 bg-purple-400/20 rounded-full blur-3xl"></div>
-      </div>
-
-      {/* API Config Button */}
-      <div className="absolute top-4 right-4 z-10">
+      {/* API Config Dialog */}
+      <div className="absolute top-4 right-4">
         <Dialog open={showApiDialog} onOpenChange={setShowApiDialog}>
           <DialogTrigger asChild>
-            <Button variant="outline" size="sm" className="gap-2 bg-white/80 backdrop-blur-sm">
+            <Button variant="outline" size="sm" className="gap-2">
               <Settings className="w-4 h-4" />
               API Config
             </Button>
@@ -352,175 +537,307 @@ export function LoginPage({ onLogin }: LoginPageProps) {
                 Enter your backend API base URL to connect to the server
               </DialogDescription>
             </DialogHeader>
+            
+            {/* API config error message */}
+            {apiConfigErrorMessage && (
+              <div className="flex items-center gap-2 p-3 text-sm text-red-600 bg-red-50 rounded-md">
+                <AlertCircle className="w-4 h-4" />
+                <span>{apiConfigErrorMessage}</span>
+              </div>
+            )}
+            
             <div className="space-y-4">
               <div>
                 <Label htmlFor="api-url">API Base URL</Label>
                 <Input
                   id="api-url"
                   type="url"
-                  placeholder="http://localhost:4000/api/v1"
+                  placeholder="https://api.example.com"
                   value={apiBaseUrl}
-                  onChange={(e) => setApiBaseUrlState(e.target.value)}
+                  onChange={(e) => setApiBaseUrl(e.target.value)}
                   className="mt-1"
                 />
-                <p className="text-xs text-muted-foreground mt-1">
-                  Example: http://localhost:4000/api/v1
+                <p className="text-xs text-gray-500 mt-1">
+                  Example: https://api.example.com or http://localhost:3000/api
                 </p>
               </div>
-              <Button onClick={handleSaveApiUrl} className="w-full">
-                Save & Connect
-              </Button>
+              <div className="flex gap-2">
+                <Button onClick={handleSaveApiUrl} className="flex-1">
+                  Save & Connect
+                </Button>
+                <Button 
+                  variant="outline" 
+                  onClick={() => {
+                    apiConfig.clearAll();
+                    setApiBaseUrl('');
+                    setShowApiDialog(false);
+                    setApiConfigErrorMessage('Using mock mode');
+                    setTimeout(() => {
+                      setApiConfigErrorMessage('');
+                    }, 3000);
+                  }}
+                >
+                  Use Mock Mode
+                </Button>
+              </div>
             </div>
           </DialogContent>
         </Dialog>
       </div>
 
       {/* Forgot Password Dialog */}
-      <Dialog open={showForgotPasswordDialog} onOpenChange={setShowForgotPasswordDialog}>
-        <DialogContent className="sm:max-w-md">
+      <Dialog open={showForgotPassword} onOpenChange={handleDialogClose}>
+        <DialogContent>
           <DialogHeader>
-            <DialogTitle>{getForgotPasswordTitle()}</DialogTitle>
+            <DialogTitle>
+              {step === 'email' && 'Reset Your Password'}
+              {step === 'otp' && 'Verify OTP'}
+              {step === 'reset' && 'Create New Password'}
+            </DialogTitle>
             <DialogDescription>
-              {getForgotPasswordDescription()}
+              {step === 'email' && 'Enter your email address to receive OTP'}
+              {step === 'otp' && 'Enter the 6-digit OTP sent to your email'}
+              {step === 'reset' && 'Enter your new password'}
             </DialogDescription>
           </DialogHeader>
-          {renderForgotPasswordContent()}
-        </DialogContent>
-      </Dialog>
 
-      {/* Main Content */}
-      <div className="relative z-10 w-full max-w-5xl grid md:grid-cols-2 gap-8 items-center">
-        {/* Left side - Branding */}
-        <div className="hidden md:block text-center md:text-left">
-          <div className="inline-flex items-center gap-3 mb-6">
-            <div className="w-16 h-16 bg-gradient-to-br from-primary to-blue-600 rounded-2xl flex items-center justify-center shadow-2xl">
-              <Building2 className="w-10 h-10 text-white" />
+          {/* Forgot password error message */}
+          {forgotPasswordErrorMessage && (
+            <div className="flex items-center gap-2 p-3 text-sm text-red-600 bg-red-50 rounded-md">
+              <AlertCircle className="w-4 h-4" />
+              <span>{forgotPasswordErrorMessage}</span>
             </div>
-            <div>
-              <h1 className="text-primary">HR & Project Hub</h1>
-              <p className="text-muted-foreground">Management System</p>
-            </div>
-          </div>
-          
-          <h2 className="mb-4">Streamline Your Workforce Management</h2>
-          <p className="text-muted-foreground mb-8">
-            A comprehensive platform for managing HR operations, projects, and team collaboration all in one place.
-          </p>
-          
-          <div className="space-y-4">
-            <div className="flex items-start gap-3">
-              <div className="w-10 h-10 bg-primary/10 rounded-lg flex items-center justify-center flex-shrink-0">
-                <Users2 className="w-5 h-5 text-primary" />
-              </div>
-              <div className="text-left">
-                <h4>Employee Management</h4>
-                <p className="text-sm text-muted-foreground">Track attendance, manage timesheets, and monitor team performance</p>
-              </div>
-            </div>
-            
-            <div className="flex items-start gap-3">
-              <div className="w-10 h-10 bg-primary/10 rounded-lg flex items-center justify-center flex-shrink-0">
-                <TrendingUp className="w-5 h-5 text-primary" />
-              </div>
-              <div className="text-left">
-                <h4>Project Tracking</h4>
-                <p className="text-sm text-muted-foreground">Manage projects with Kanban boards and real-time updates</p>
-              </div>
-            </div>
-            
-            <div className="flex items-start gap-3">
-              <div className="w-10 h-10 bg-primary/10 rounded-lg flex items-center justify-center flex-shrink-0">
-                <Shield className="w-5 h-5 text-primary" />
-              </div>
-              <div className="text-left">
-                <h4>Secure Authentication</h4>
-                <p className="text-sm text-muted-foreground">OTP verification, password reset, and role-based access control</p>
-              </div>
-            </div>
-          </div>
-        </div>
+          )}
 
-        {/* Right side - Login Form */}
-        <Card className="shadow-2xl border-0 bg-white/80 backdrop-blur-sm">
-          <CardHeader className="space-y-1">
-            <div className="flex justify-center mb-4 md:hidden">
-              <div className="w-12 h-12 bg-gradient-to-br from-primary to-blue-600 rounded-xl flex items-center justify-center shadow-lg">
-                <Building2 className="w-7 h-7 text-white" />
-              </div>
-            </div>
-            <CardTitle className="text-center">Welcome Back</CardTitle>
-            <CardDescription className="text-center">
-              Sign in to your account to continue
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <form onSubmit={handleSubmit} className="space-y-4">
+          {step === 'email' && (
+            <form onSubmit={handleSendOTP} className="space-y-4">
               <div className="space-y-2">
-                <Label htmlFor="email">Email</Label>
+                <Label htmlFor="reset-email">Email Address</Label>
                 <Input
-                  id="email"
+                  id="reset-email"
                   type="email"
                   placeholder="Enter your email"
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
+                  value={forgotPasswordEmail}
+                  onChange={(e) => setForgotPasswordEmail(e.target.value)}
                   required
-                  className="bg-white"
                 />
               </div>
-
-              <div className="space-y-2">
-                <Label htmlFor="password">Password</Label>
-                <div className="relative">
-                  <Input
-                    id="password"
-                    type={showPassword ? 'text' : 'password'}
-                    placeholder="Enter your password"
-                    value={password}
-                    onChange={(e) => setPassword(e.target.value)}
-                    required
-                    className="bg-white pr-10"
-                  />
-                  <button
-                    type="button"
-                    onClick={() => setShowPassword(!showPassword)}
-                    className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors"
-                  >
-                    {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                  </button>
-                </div>
+              <div className="flex gap-2">
+                <Button 
+                  type="submit" 
+                  className="flex-1" 
+                  disabled={isSendingOTP}
+                >
+                  {isSendingOTP ? (
+                    <>Sending OTP...</>
+                  ) : (
+                    <>
+                      <Mail className="w-4 h-4 mr-2" />
+                      Send OTP
+                    </>
+                  )}
+                </Button>
+                <Button 
+                  type="button" 
+                  variant="outline" 
+                  onClick={() => setShowForgotPassword(false)}
+                >
+                  Cancel
+                </Button>
               </div>
+            </form>
+          )}
 
-              <Button type="submit" className="w-full shadow-md" disabled={isLoading}>
-                {isLoading ? 'Signing in...' : 'Login'}
-              </Button>
-
+          {step === 'otp' && (
+            <form onSubmit={handleVerifyOTP} className="space-y-4">
+              <div className="space-y-2">
+                <Label htmlFor="otp">6-digit OTP</Label>
+                <Input
+                  id="otp"
+                  type="text"
+                  placeholder="Enter OTP"
+                  value={otp}
+                  onChange={(e) => setOtp(e.target.value.replace(/\D/g, '').slice(0, 6))}
+                  maxLength={6}
+                  required
+                />
+                <p className="text-xs text-gray-500">
+                  Check your email for the OTP
+                  {!apiConfig.hasBaseUrl() && (
+                    <span className="block text-orange-600">Demo OTP: 123456</span>
+                  )}
+                </p>
+              </div>
+              <div className="flex gap-2">
+                <Button 
+                  type="submit" 
+                  className="flex-1" 
+                  disabled={isSendingOTP || otp.length !== 6}
+                >
+                  {isSendingOTP ? 'Verifying...' : 'Verify OTP'}
+                </Button>
+                <Button 
+                  type="button" 
+                  variant="outline" 
+                  onClick={() => setStep('email')}
+                >
+                  Back
+                </Button>
+              </div>
               <div className="text-center">
                 <Button 
                   type="button" 
                   variant="link" 
-                  className="text-sm text-muted-foreground"
-                  onClick={() => setShowForgotPasswordDialog(true)}
+                  className="text-sm"
+                  onClick={handleSendOTP}
+                  disabled={isSendingOTP}
                 >
-                  Forgot Password?
+                  Resend OTP
                 </Button>
-              <p>SuperAdmin123!</p>
               </div>
             </form>
+          )}
 
-            {getApiBaseUrl() && (
-              <div className="mt-6 p-4 bg-green-50 rounded-lg border border-green-200">
-                <div className="flex items-center gap-2 text-green-700 mb-2">
-                  <Shield className="w-4 h-4" />
-                  <p className="text-sm">API Connected</p>
-                </div>
-                <p className="text-xs text-green-800 font-mono break-all">
-                  {getApiBaseUrl()}
-                </p>
+          {step === 'reset' && (
+            <form onSubmit={handleResetPassword} className="space-y-4">
+              <div className="space-y-2">
+                <Label htmlFor="new-password">New Password</Label>
+                <Input
+                  id="new-password"
+                  type="password"
+                  placeholder="Enter new password"
+                  value={newPassword}
+                  onChange={(e) => setNewPassword(e.target.value)}
+                  required
+                  minLength={8}
+                />
               </div>
-            )}
-          </CardContent>
-        </Card>
-      </div>
+              <div className="space-y-2">
+                <Label htmlFor="confirm-password">Confirm Password</Label>
+                <Input
+                  id="confirm-password"
+                  type="password"
+                  placeholder="Confirm new password"
+                  value={confirmPassword}
+                  onChange={(e) => setConfirmPassword(e.target.value)}
+                  required
+                />
+              </div>
+              <div className="flex gap-2">
+                <Button 
+                  type="submit" 
+                  className="flex-1" 
+                  disabled={isSendingOTP || newPassword.length < 8 || newPassword !== confirmPassword}
+                >
+                  {isSendingOTP ? 'Resetting...' : 'Reset Password'}
+                </Button>
+                <Button 
+                  type="button" 
+                  variant="outline" 
+                  onClick={() => setStep('otp')}
+                >
+                  Back
+                </Button>
+              </div>
+            </form>
+          )}
+        </DialogContent>
+      </Dialog>
+
+      {/* Main Login Card */}
+      <Card className="w-full max-w-md">
+        <CardHeader className="space-y-1">
+          <CardTitle className="text-center">HR & Project Hub</CardTitle>
+          <CardDescription className="text-center">
+            Sign in to your account to continue
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          {/* Login error message display */}
+          {loginErrorMessage && (
+            <div className="flex items-center gap-2 p-3 mb-4 text-sm text-red-600 bg-red-50 rounded-md border border-red-200">
+              <AlertCircle className="w-4 h-4 flex-shrink-0" />
+              <span className="flex-1">{loginErrorMessage}</span>
+            </div>
+          )}
+
+          <form onSubmit={handleSubmit} className="space-y-4">
+            <div className="space-y-2">
+              <Label htmlFor="email">Email / Employee ID</Label>
+              <Input
+                id="email"
+                type="text"
+                placeholder="Enter your email"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                required
+                className={loginErrorMessage ? 'border-red-300 focus:border-red-500' : ''}
+              />
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="password">Password</Label>
+              <div className="relative">
+                <Input
+                  id="password"
+                  type={showPassword ? 'text' : 'password'}
+                  placeholder="Enter your password"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  required
+                  className={loginErrorMessage ? 'border-red-300 focus:border-red-500' : ''}
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowPassword(!showPassword)}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-700"
+                >
+                  {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                </button>
+              </div>
+            </div>
+
+            <Button type="submit" className="w-full" disabled={isLoading}>
+              {isLoading ? 'Signing in...' : 'Login'}
+            </Button>
+
+            <div className="text-center">
+              <Button 
+                type="button" 
+                variant="link" 
+                className="text-sm"
+                onClick={() => setShowForgotPassword(true)}
+              >
+                Forgot Password?
+              </Button>
+              <p className="text-xs text-gray-500 mt-1">*Test* Admin@123</p>
+            </div>
+          </form>
+
+          {!apiConfig.hasBaseUrl() && (
+            <div className="mt-6 p-4 bg-blue-50 rounded-lg space-y-2">
+              <p className="text-sm">Demo Accounts (password: password):</p>
+              <div className="text-xs space-y-1 text-gray-600">
+                <p>• employee@company.com (Employee)</p>
+                <p>• manager@company.com (Manager)</p>
+                <p>• hr@company.com (HR)</p>
+                <p>• admin@company.com (Admin)</p>
+              </div>
+              <p className="text-xs text-gray-500 mt-2 pt-2 border-t">
+                Configure API URL using the button above to connect to your backend
+              </p>
+            </div>
+          )}
+          
+          {apiConfig.hasBaseUrl() && (
+            <div className="mt-6 p-4 bg-green-50 rounded-lg">
+              <p className="text-sm text-green-800">
+                Connected to: <span className="font-mono text-xs">{apiConfig.getBaseUrl()}</span>
+              </p>
+            </div>
+          )}
+        </CardContent>
+      </Card>
     </div>
   );
 }

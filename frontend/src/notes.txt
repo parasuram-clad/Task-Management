@@ -1,0 +1,9 @@
+{
+  "user": {
+    "id": "3",
+    "name": "System Administrator",
+    "email": "admin@cumulusclad.com",
+    "role": "admin"
+  },
+  "accessToken": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6IjMiLCJyb2xlIjoiYWRtaW4iLCJpYXQiOjE3NjI1MDM5MzUsImV4cCI6MTc2MjUwNDgzNX0._gxDxu95BC0qkejY6uaukJEoJa-m4NRgua9WmcaEhf0"
+}

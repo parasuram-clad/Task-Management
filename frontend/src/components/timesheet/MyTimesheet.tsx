@@ -45,6 +45,7 @@ export function MyTimesheet({ user }: MyTimesheetProps) {
   });
 
   const [entries, setEntries] = useState<TimesheetEntry[]>([]);
+  const [userTasks, setUserTasks] = useState<Task[]>([]);
   const [status, setStatus] = useState<'draft' | 'submitted' | 'approved' | 'rejected'>('draft');
   const [showSubmitDialog, setShowSubmitDialog] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
@@ -52,36 +53,16 @@ export function MyTimesheet({ user }: MyTimesheetProps) {
   const [userProjects, setUserProjects] = useState<Project[]>([]);
   const [projectTasks, setProjectTasks] = useState<{[key: string]: Task[]}>({});
   const [openDays, setOpenDays] = useState<Set<string>>(new Set());
-  const [timesheetData, setTimesheetData] = useState<any>(null);
+const [timesheetData, setTimesheetData] = useState<any>(null);
 
   const useApi = apiConfig.hasBaseUrl();
 
-  // Mock data for projects and tasks
-  const mockProjects: Project[] = [
-    { id: 1, name: 'E-commerce Platform', description: 'Online shopping platform', status: 'active' },
-    { id: 2, name: 'Mobile App Redesign', description: 'Mobile application redesign project', status: 'active' },
-    { id: 3, name: 'API Integration', description: 'Third-party API integration', status: 'active' },
-    { id: 4, name: 'Dashboard Analytics', description: 'Analytics dashboard development', status: 'active' },
-  ];
-
-  const mockTasks: Task[] = [
-    { id: 1, title: 'Bug Fixes', description: 'Fix critical bugs', status: 'in_progress', project_id: 1, assignee_id: parseInt(user.id) },
-    { id: 2, title: 'UI Components', description: 'Create new UI components', status: 'todo', project_id: 1, assignee_id: parseInt(user.id) },
-    { id: 3, title: 'Database Optimization', description: 'Optimize database queries', status: 'done', project_id: 1, assignee_id: parseInt(user.id) },
-    { id: 4, title: 'Mobile Navigation', description: 'Redesign mobile navigation', status: 'in_progress', project_id: 2, assignee_id: parseInt(user.id) },
-    { id: 5, title: 'Payment Integration', description: 'Integrate payment gateway', status: 'todo', project_id: 3, assignee_id: parseInt(user.id) },
-    { id: 6, title: 'Charts Implementation', description: 'Implement analytics charts', status: 'in_progress', project_id: 4, assignee_id: parseInt(user.id) },
-  ];
-
-  // Generate week dates (Monday to Sunday)
+  // Generate week dates
   const weekDates = Array.from({ length: 7 }, (_, index) => {
     const date = new Date(currentWeekStart);
     date.setDate(currentWeekStart.getDate() + index);
     return date;
   });
-
-  // Week days for display
-  const weekDays = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 
   // Initialize all days as closed by default
   useEffect(() => {
@@ -99,7 +80,7 @@ export function MyTimesheet({ user }: MyTimesheetProps) {
     setOpenDays(newOpenDays);
   };
 
-  // Check if displayed week is the current actual week
+  // FIXED: Check if displayed week is the current actual week
   const isCurrentWeek = (): boolean => {
     const today = new Date();
     const todayWeekStart = new Date(today);
@@ -107,6 +88,7 @@ export function MyTimesheet({ user }: MyTimesheetProps) {
     const diff = today.getDate() - day + (day === 0 ? -6 : 1);
     todayWeekStart.setDate(diff);
     
+    // Compare the displayed week start with current week start
     return currentWeekStart.toDateString() === todayWeekStart.toDateString();
   };
 
@@ -121,231 +103,224 @@ export function MyTimesheet({ user }: MyTimesheetProps) {
     return currentWeekStart > todayWeekStart;
   };
 
-  // Check if timesheet is approved
-  const isTimesheetApproved = (): boolean => {
-    return status === 'approved';
-  };
-
-  // Check if timesheet is rejected
-  const isTimesheetRejected = (): boolean => {
-    return status === 'rejected';
-  };
-
-  const shouldDisableEditing = (): boolean => {
-    return isTimesheetApproved() || 
-           (isCurrentWeek() && status === 'submitted') || 
-           !isCurrentWeek() || 
-           isFutureWeek();
-  };
-
-  const getReviewDetails = () => {
-    if (isTimesheetApproved() && timesheetData?.approved_at && timesheetData?.approver_name) {
-      return {
-        type: 'approved',
-        by: timesheetData.approver_name,
-        at: timesheetData.approved_at,
-        message: `Approved by ${timesheetData.approver_name} on ${new Date(timesheetData.approved_at).toLocaleDateString()}`
-      };
-    }
-    
-    if (isTimesheetRejected() && timesheetData?.rejected_at && timesheetData?.rejector_name) {
-      return {
-        type: 'rejected',
-        by: timesheetData.rejector_name,
-        at: timesheetData.rejected_at,
-        message: `Rejected by ${timesheetData.rejector_name} on ${new Date(timesheetData.rejected_at).toLocaleDateString()}`
-      };
-    }
-    
-    return null;
-  };
+  // Check if editing should be disabled
 
   // Fetch user-specific projects and timesheet when week changes
   useEffect(() => {
     if (useApi) {
       fetchUserProjects();
       fetchTimesheet();
-    } else {
-      // Use mock data when API is not available
-      setUserProjects(mockProjects);
-      initializeMockProjectTasks();
-      initializeMockEntries();
     }
   }, [currentWeekStart, useApi]);
 
-  const fetchUserProjects = async () => {
-    try {
-      console.log('Fetching user projects for timesheet...');
-      const data = await timesheetApi.getMyProjects();
-      console.log('User projects loaded:', data);
-      
-      if (data && Array.isArray(data)) {
-        setUserProjects(data);
-        
-        // Pre-fetch tasks for all projects
-        data.forEach(project => {
-          fetchTasksForProject(project.id.toString());
-        });
-      } else {
-        console.log('No projects data received or invalid format');
-        setUserProjects(mockProjects);
-        initializeMockProjectTasks();
-      }
-    } catch (error) {
-      console.error('Failed to fetch user projects:', error);
-      toast.error('Failed to load your projects');
-      setUserProjects(mockProjects);
-      initializeMockProjectTasks();
+  // Fetch user-specific tasks when projects are loaded
+  useEffect(() => {
+    if (useApi && userProjects.length > 0) {
+      fetchUserTasks();
     }
-  };
+  }, [userProjects, useApi]);
 
-  const initializeMockProjectTasks = () => {
-    const tasksByProject: {[key: string]: Task[]} = {};
-    mockProjects.forEach(project => {
-      tasksByProject[project.id] = mockTasks.filter(task => task.project_id === project.id);
-    });
-    setProjectTasks(tasksByProject);
-  };
 
-  const initializeMockEntries = () => {
-    // Create some mock entries for the current week
-    const mockEntries: TimesheetEntry[] = [];
+  // Add this function to check if timesheet is approved
+const isTimesheetApproved = (): boolean => {
+  return status === 'approved';
+};
+
+// Add this function to check if timesheet is rejected
+const isTimesheetRejected = (): boolean => {
+  return status === 'rejected';
+};
+
+const shouldDisableEditing = (): boolean => {
+  // Disable editing for:
+  // 1. Approved timesheets (cannot edit approved timesheets)
+  // 2. Current week if submitted (waiting for approval)
+  // 3. Previous weeks (completed weeks)
+  // 4. Future weeks
+  return isTimesheetApproved() || 
+         (isCurrentWeek() && status === 'submitted') || 
+         !isCurrentWeek() || 
+         isFutureWeek();
+};
+
+
+const getReviewDetails = () => {
+  if (isTimesheetApproved() && timesheetData?.approved_at && timesheetData?.approver_name) {
+    return {
+      type: 'approved',
+      by: timesheetData.approver_name,
+      at: timesheetData.approved_at,
+      message: `Approved by ${timesheetData.approver_name} on ${new Date(timesheetData.approved_at).toLocaleDateString()}`
+    };
+  }
+  
+  if (isTimesheetRejected() && timesheetData?.rejected_at && timesheetData?.rejector_name) {
+    return {
+      type: 'rejected',
+      by: timesheetData.rejector_name,
+      at: timesheetData.rejected_at,
+      message: `Rejected by ${timesheetData.rejector_name} on ${new Date(timesheetData.rejected_at).toLocaleDateString()}`
+    };
+  }
+  
+  return null;
+};
+ const fetchUserProjects = async () => {
+  try {
+    console.log('Fetching user projects for timesheet...');
+    const data = await timesheetApi.getMyProjects();
+    console.log('User projects loaded:', data);
     
-    // Add a couple of sample entries
-    weekDates.forEach((date, index) => {
-      if (index < 3) { // Add entries only for first 3 days for demo
-        const project = mockProjects[index % mockProjects.length];
-        const tasks = mockTasks.filter(task => task.project_id === project.id);
-        
-        if (tasks.length > 0) {
-          mockEntries.push({
-            id: `mock-${date.toISOString().split('T')[0]}-${index}`,
-            date: date.toISOString().split('T')[0],
-            projectId: project.id.toString(),
-            projectName: project.name,
-            taskId: tasks[0].id.toString(),
-            taskName: tasks[0].title,
-            hours: index === 0 ? 8 : index === 1 ? 6 : 7
-          });
+    if (data && Array.isArray(data)) {
+      setUserProjects(data);
+      
+      // Pre-fetch tasks for all projects
+      data.forEach(project => {
+        fetchTasksForProject(project.id.toString());
+      });
+    } else {
+      console.log('No projects data received or invalid format');
+      setUserProjects([]);
+    }
+  } catch (error) {
+    console.error('Failed to fetch user projects:', error);
+    toast.error('Failed to load your projects');
+    setUserProjects([]);
+  }
+};
+
+
+const fetchTasksForProject = async (projectId: string) => {
+  try {
+    if (!projectId) return;
+    
+    console.log(`Fetching tasks for project ${projectId}`);
+    const tasks = await timesheetApi.getMyTasksForProject(parseInt(projectId));
+    console.log(`Tasks for project ${projectId}:`, tasks);
+    
+    // Ensure we always set a valid array
+    let validTasks = [];
+    if (tasks && Array.isArray(tasks)) {
+      validTasks = tasks;
+    } else {
+      console.warn(`Invalid tasks format for project ${projectId}, setting empty array`);
+      validTasks = [];
+    }
+    
+    setProjectTasks(prev => ({
+      ...prev,
+      [projectId]: validTasks
+    }));
+  } catch (error) {
+    console.error(`Failed to fetch tasks for project ${projectId}:`, error);
+    // Set empty array on error to prevent undefined issues
+    setProjectTasks(prev => ({
+      ...prev,
+      [projectId]: []
+    }));
+  }
+};
+
+  const fetchUserTasks = async () => {
+    try {
+      const allTasks: Task[] = [];
+      
+      for (const project of userProjects) {
+        try {
+          const projectTasks = await projectApi.getWithTasks(project.id);
+          if (projectTasks.tasks) {
+            const userProjectTasks = projectTasks.tasks.filter(task => {
+              const assigneeId = task.assignee_id || task.assigned_to;
+              return assigneeId === parseInt(user.id);
+            });
+            
+            allTasks.push(...userProjectTasks.map(task => ({
+              ...task,
+              project_name: project.name,
+              project_id: project.id
+            })));
+          }
+        } catch (error) {
+          console.error(`Failed to fetch tasks for project ${project.id}:`, error);
         }
       }
-    });
-    
-    setEntries(mockEntries);
-    setStatus('draft');
-  };
-
-  const fetchTasksForProject = async (projectId: string) => {
-    try {
-      if (!projectId) return;
       
-      if (!useApi) {
-        // Use mock tasks when API is not available
-        const tasks = mockTasks.filter(task => task.project_id.toString() === projectId);
-        setProjectTasks(prev => ({
-          ...prev,
-          [projectId]: tasks
-        }));
-        return;
-      }
-      
-      console.log(`Fetching tasks for project ${projectId}`);
-      const tasks = await timesheetApi.getMyTasksForProject(parseInt(projectId));
-      console.log(`Tasks for project ${projectId}:`, tasks);
-      
-      let validTasks = [];
-      if (tasks && Array.isArray(tasks)) {
-        validTasks = tasks;
-      } else {
-        console.warn(`Invalid tasks format for project ${projectId}, setting empty array`);
-        validTasks = [];
-      }
-      
-      setProjectTasks(prev => ({
-        ...prev,
-        [projectId]: validTasks
-      }));
+      console.log('Fetched user tasks:', allTasks);
+      setUserTasks(allTasks);
     } catch (error) {
-      console.error(`Failed to fetch tasks for project ${projectId}:`, error);
-      // Fallback to mock tasks
-      const tasks = mockTasks.filter(task => task.project_id.toString() === projectId);
-      setProjectTasks(prev => ({
-        ...prev,
-        [projectId]: tasks
-      }));
+      console.error('Failed to fetch user tasks:', error);
+      toast.error('Failed to load your tasks');
     }
   };
 
-  const fetchTimesheet = async () => {
-    if (!useApi) {
-      // Use mock data when API is not available
-      initializeMockEntries();
-      return;
-    }
-
-    setIsLoading(true);
-    try {
-      const weekStartDate = currentWeekStart.toISOString().split('T')[0];
-      console.log('Fetching timesheet for week:', weekStartDate);
+const fetchTimesheet = async () => {
+  setIsLoading(true);
+  try {
+    const weekStartDate = currentWeekStart.toISOString().split('T')[0];
+    console.log('Fetching timesheet for week:', weekStartDate);
+    
+    const data = await timesheetApi.getWeekly(weekStartDate);
+    console.log('Timesheet API response:', data);
+    
+    if (data) {
+      setTimesheetData(data);
       
-      const data = await timesheetApi.getWeekly(weekStartDate);
-      console.log('Timesheet API response:', data);
-      
-      if (data) {
-        setTimesheetData(data);
-        
-        if (data.entries && data.entries.length > 0) {
-          const transformedEntries: TimesheetEntry[] = data.entries.map(entry => {
-            const projectId = entry.project_id?.toString() || entry.projectId?.toString() || '';
-            const project = userProjects.find(p => p.id.toString() === projectId);
-            
-            const workDate = entry.work_date || entry.workDate || '';
-            const formattedDate = workDate ? new Date(workDate).toISOString().split('T')[0] : '';
-            
-            return {
-              id: entry.id?.toString() || Date.now().toString(),
-              date: formattedDate,
-              projectId: projectId,
-              projectName: project?.name || entry.project_name || 'Unknown Project',
-              taskId: entry.task_id?.toString() || entry.taskId?.toString() || 'no-task',
-              taskName: entry.task_title || 'No specific task',
-              hours: entry.hours || 0
-            };
-          });
+      if (data.entries && data.entries.length > 0) {
+        const transformedEntries: TimesheetEntry[] = data.entries.map(entry => {
+          const projectId = entry.project_id?.toString() || entry.projectId?.toString() || '';
+          const project = userProjects.find(p => p.id.toString() === projectId);
           
-          console.log('Transformed entries:', transformedEntries);
-          setEntries(transformedEntries);
-          setStatus(data.status as any);
-        } else {
-          console.log('No timesheet entries found, setting empty array');
-          setEntries([]);
-          setStatus(data.status as any);
-        }
+          const workDate = entry.work_date || entry.workDate || '';
+          const formattedDate = workDate ? new Date(workDate).toISOString().split('T')[0] : '';
+          
+          return {
+            id: entry.id?.toString() || Date.now().toString(),
+            date: formattedDate,
+            projectId: projectId,
+            projectName: project?.name || entry.project_name || 'Unknown Project',
+            taskId: entry.task_id?.toString() || entry.taskId?.toString() || 'no-task',
+            taskName: entry.task_title || 'No specific task',
+            hours: entry.hours || 0
+          };
+        });
+        
+        console.log('Transformed entries:', transformedEntries);
+        setEntries(transformedEntries);
+        setStatus(data.status as any);
       } else {
-        console.log('No timesheet data received, setting defaults');
+        console.log('No timesheet entries found, setting empty array');
         setEntries([]);
-        setStatus('draft');
-        setTimesheetData(null);
+        setStatus(data.status as any);
       }
-    } catch (error) {
-      console.error('Error fetching timesheet:', error);
-      if (error instanceof ApiError && error.status !== 404) {
-        toast.error(`Failed to load timesheet: ${error.message}`);
-      } else if (error instanceof ApiError && error.status === 404) {
-        console.log('No timesheet found for this week (404)');
-        setEntries([]);
-        setStatus('draft');
-        setTimesheetData(null);
-      } else {
-        toast.error('Failed to load timesheet');
-        setEntries([]);
-        setStatus('draft');
-        setTimesheetData(null);
-      }
-    } finally {
-      setIsLoading(false);
+    } else {
+      // Handle case where data is null/undefined
+      console.log('No timesheet data received, setting defaults');
+      setEntries([]);
+      setStatus('draft');
+      setTimesheetData(null);
     }
-  };
+  } catch (error) {
+    console.error('Error fetching timesheet:', error);
+    if (error instanceof ApiError && error.status !== 404) {
+      toast.error(`Failed to load timesheet: ${error.message}`);
+    } else if (error instanceof ApiError && error.status === 404) {
+      console.log('No timesheet found for this week (404)');
+      setEntries([]);
+      setStatus('draft');
+      setTimesheetData(null);
+    } else {
+      // Handle other errors
+      toast.error('Failed to load timesheet');
+      setEntries([]);
+      setStatus('draft');
+      setTimesheetData(null);
+    }
+  } finally {
+    setIsLoading(false);
+  }
+};
+
+
 
   const getWeeklyTotal = (): number => {
     const total = entries.reduce((sum, entry) => {
@@ -387,24 +362,25 @@ export function MyTimesheet({ user }: MyTimesheetProps) {
     ));
   };
 
-  const getTasksForProject = (projectId: string): Task[] => {
-    try {
-      if (!projectId) return [];
-      
-      const tasks = projectTasks[projectId];
-      
-      if (tasks && Array.isArray(tasks)) {
-        console.log(`Getting tasks for project ${projectId}:`, tasks.length, 'tasks');
-        return tasks;
-      }
-      
-      console.log(`No tasks found for project ${projectId} or invalid format`);
-      return [];
-    } catch (error) {
-      console.error(`Error getting tasks for project ${projectId}:`, error);
-      return [];
+const getTasksForProject = (projectId: string): Task[] => {
+  try {
+    if (!projectId) return [];
+    
+    const tasks = projectTasks[projectId];
+    
+    // Check if tasks is a valid array
+    if (tasks && Array.isArray(tasks)) {
+      console.log(`Getting tasks for project ${projectId}:`, tasks.length, 'tasks');
+      return tasks;
     }
-  };
+    
+    console.log(`No tasks found for project ${projectId} or invalid format`);
+    return [];
+  } catch (error) {
+    console.error(`Error getting tasks for project ${projectId}:`, error);
+    return [];
+  }
+};
 
   const handleTaskChange = (entryId: string, taskId: string) => {
     if (taskId === 'no-task') {
@@ -414,7 +390,7 @@ export function MyTimesheet({ user }: MyTimesheetProps) {
           : entry
       ));
     } else {
-      const task = getTasksForProject(entries.find(e => e.id === entryId)?.projectId || '').find(t => t.id.toString() === taskId);
+      const task = userTasks.find(t => t.id.toString() === taskId);
       setEntries(entries.map(entry => 
         entry.id === entryId
           ? { ...entry, taskId, taskName: task?.title || '' }
@@ -585,7 +561,7 @@ export function MyTimesheet({ user }: MyTimesheetProps) {
 
   const formatWeekRange = () => {
     const endDate = new Date(currentWeekStart);
-    endDate.setDate(currentWeekStart.getDate() + 6); // Monday to Sunday
+    endDate.setDate(currentWeekStart.getDate() + 6);
     return `${currentWeekStart.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} - ${endDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}`;
   };
 
@@ -604,63 +580,62 @@ export function MyTimesheet({ user }: MyTimesheetProps) {
 
   return (
     <div className="p-6 space-y-6">
+    <div className="flex items-center justify-between">
+  <div>
+     <h1 className="text-3xl font-bold tracking-tight">My Timesheet</h1>
+    <p className="text-gray-500">Log your hours by project and task</p>
+  </div>
+  <div className="flex items-center gap-4">
+    {isSaving && (
+      <Badge variant="secondary" className="animate-pulse">
+        Saving...
+      </Badge>
+    )}
+    <Badge variant={
+      status === 'approved' ? 'default' :
+      status === 'submitted' ? 'secondary' :
+      status === 'rejected' ? 'destructive' :
+      'outline'
+    }>
+      {status.toUpperCase()}
+    </Badge>
+  </div>
+</div>
+
+{getReviewDetails() && (
+  <Card className="bg-blue-50 border-blue-200">
+    <CardContent className="pt-4">
       <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-3xl font-bold tracking-tight">My Timesheet</h1>
-          <p className="text-gray-500">Log your hours by project and task</p>
+        <div className="flex items-center gap-2">
+          <div className={`w-3 h-3 rounded-full ${
+            getReviewDetails()?.type === 'approved' ? 'bg-green-500' : 'bg-red-500'
+          }`}></div>
+          <span className="font-medium">
+            {getReviewDetails()?.type === 'approved' ? 'Approved' : 'Rejected'}
+          </span>
+          <span className="text-gray-600 text-sm">
+            {getReviewDetails()?.message}
+          </span>
         </div>
-        <div className="flex items-center gap-4">
-          {isSaving && (
-            <Badge variant="secondary" className="animate-pulse">
-              Saving...
-            </Badge>
-          )}
-          <Badge variant={
-            status === 'approved' ? 'default' :
-            status === 'submitted' ? 'secondary' :
-            status === 'rejected' ? 'destructive' :
-            'outline'
-          }>
-            {status.toUpperCase()}
+        {isTimesheetRejected() && (
+          <Badge variant="outline" className="bg-yellow-50 text-yellow-700 border-yellow-200">
+            Editable - Please make corrections
           </Badge>
-        </div>
+        )}
+        {isTimesheetApproved() && (
+          <Badge variant="outline" className="bg-green-50 text-green-700 border-green-200">
+            Locked - Cannot be modified
+          </Badge>
+        )}
       </div>
-
-      {getReviewDetails() && (
-        <Card className="bg-blue-50 border-blue-200">
-          <CardContent className="pt-4">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <div className={`w-3 h-3 rounded-full ${
-                  getReviewDetails()?.type === 'approved' ? 'bg-green-500' : 'bg-red-500'
-                }`}></div>
-                <span className="font-medium">
-                  {getReviewDetails()?.type === 'approved' ? 'Approved' : 'Rejected'}
-                </span>
-                <span className="text-gray-600 text-sm">
-                  {getReviewDetails()?.message}
-                </span>
-              </div>
-              {isTimesheetRejected() && (
-                <Badge variant="outline" className="bg-yellow-50 text-yellow-700 border-yellow-200">
-                  Editable - Please make corrections
-                </Badge>
-              )}
-              {isTimesheetApproved() && (
-                <Badge variant="outline" className="bg-green-50 text-green-700 border-green-200">
-                  Locked - Cannot be modified
-                </Badge>
-              )}
-            </div>
-            {timesheetData?.rejection_reason && (
-              <div className="mt-2 p-2 bg-red-50 border border-red-200 rounded text-sm text-red-700">
-                <strong>Reason:</strong> {timesheetData.rejection_reason}
-              </div>
-            )}
-          </CardContent>
-        </Card>
+      {timesheetData?.rejection_reason && (
+        <div className="mt-2 p-2 bg-red-50 border border-red-200 rounded text-sm text-red-700">
+          <strong>Reason:</strong> {timesheetData.rejection_reason}
+        </div>
       )}
-
+    </CardContent>
+  </Card>
+)}
       <Card>
         <CardHeader>
           <div className="flex items-center justify-between">
@@ -709,13 +684,12 @@ export function MyTimesheet({ user }: MyTimesheetProps) {
                 </div>
               </div>
 
-              {/* Daily Sections */}
+              {/* Daily Sections as Collapsible */}
               {weekDates.map((date, dateIndex) => {
                 const dateStr = formatDateForInput(date);
                 const dateEntries = getEntriesForDate(dateStr);
                 const dailyTotal = getDailyTotal(dateStr);
                 const isOpen = openDays.has(dateStr);
-                const dayName = weekDays[dateIndex];
 
                 return (
                   <Collapsible
@@ -747,113 +721,129 @@ export function MyTimesheet({ user }: MyTimesheetProps) {
 
                     <CollapsibleContent>
                       <div className="p-4 bg-white">
-                        {dateEntries.length > 0 ? (
-                          <div className="overflow-x-auto">
-                            <table className="w-full border-collapse">
-                              <thead>
-                                <tr className="bg-gray-50 border-b">
-                                  <th className="text-left p-3 font-medium text-gray-700">Date</th>
-                                  <th className="text-left p-3 font-medium text-gray-700">Project</th>
-                                  <th className="text-left p-3 font-medium text-gray-700">Task</th>
-                                  <th className="text-center p-3 font-medium text-gray-700">Hours</th>
-                                  <th className="text-center p-3 font-medium text-gray-700">Actions</th>
-                                </tr>
-                              </thead>
-                              <tbody>
-                                {dateEntries.map(entry => (
-                                  <tr key={entry.id} className="border-b hover:bg-gray-50 transition-colors">
-                                    <td className="p-3 text-sm text-gray-500">
-                                      {formatDate(new Date(entry.date))}
-                                    </td>
-                                    <td className="p-3">
-                                      <Select
-                                        value={entry.projectId}
-                                        onValueChange={(value) => handleProjectChange(entry.id, value)}
+                        <div className="overflow-x-auto">
+                          <table className="w-full border-collapse">
+                            <thead>
+                              <tr className="bg-gray-50">
+                                <th className="px-4 py-2 text-left text-sm font-medium text-gray-700 border-b">Date</th>
+                                <th className="px-4 py-2 text-left text-sm font-medium text-gray-700 border-b">Project</th>
+                                <th className="px-4 py-2 text-left text-sm font-medium text-gray-700 border-b">Task</th>
+                                <th className="px-4 py-2 text-center text-sm font-medium text-gray-700 border-b">Hours</th>
+                                <th className="px-4 py-2 text-center text-sm font-medium text-gray-700 border-b">Actions</th>
+                              </tr>
+                            </thead>
+                            
+                            <tbody>
+                              {dateEntries.map(entry => (
+                                <tr key={entry.id} className="border-b hover:bg-gray-50 transition-colors">
+                                  <td className="px-4 py-3 text-sm text-gray-500">
+                                    {formatDate(new Date(entry.date))}
+                                  </td>
+                                  
+                                  <td className="px-4 py-3">
+                                    <Select
+                                      value={entry.projectId}
+                                      onValueChange={(value) => handleProjectChange(entry.id, value)}
+                                      disabled={shouldDisableEditing()}
+                                    >
+                                      <SelectTrigger className="w-full">
+                                        <SelectValue placeholder="Select project" />
+                                      </SelectTrigger>
+                                      <SelectContent>
+                                        {userProjects.map(project => (
+                                          <SelectItem key={project.id} value={project.id.toString()}>
+                                            {project.name}
+                                          </SelectItem>
+                                        ))}
+                                      </SelectContent>
+                                    </Select>
+                                  </td>
+                                  
+   <td className="px-4 py-3">
+  <Select
+    value={entry.taskId}
+    onValueChange={(value) => handleTaskChange(entry.id, value)}
+    disabled={shouldDisableEditing() || !entry.projectId}
+  >
+    <SelectTrigger className="w-full">
+      <SelectValue placeholder={entry.projectId ? "Select task" : "Select project first"} />
+    </SelectTrigger>
+    <SelectContent>
+      <SelectItem value="no-task">No specific task</SelectItem>
+      {entry.projectId && (() => {
+        try {
+          const tasks = getTasksForProject(entry.projectId);
+          if (tasks && Array.isArray(tasks) && tasks.length > 0) {
+            return tasks.map(task => (
+              <SelectItem key={task.id} value={task.id.toString()}>
+                {task.title} {task.status && task.status !== 'todo' ? `(${task.status})` : ''}
+              </SelectItem>
+            ));
+          } else {
+            return (
+              <SelectItem value="no-available-tasks" disabled>
+                No tasks available for this project
+              </SelectItem>
+            );
+          }
+        } catch (error) {
+          console.error('Error rendering tasks for project:', error);
+          return (
+            <SelectItem value="error" disabled>
+              Error loading tasks
+            </SelectItem>
+          );
+        }
+      })()}
+    </SelectContent>
+  </Select>
+</td>
+                                  
+                                  <td className="px-4 py-3">
+                                    <div className="flex justify-center">
+                                      <Input
+                                        type="number"
+                                        min="0"
+                                        max="24"
+                                        step="0.5"
+                                        value={entry.hours || 0}
+                                        onChange={(e) => handleHoursChange(entry.id, parseFloat(e.target.value) || 0)}
+                                        className="w-20 text-center"
                                         disabled={shouldDisableEditing()}
+                                        placeholder="0.0"
+                                      />
+                                    </div>
+                                  </td>
+                                  
+                                  <td className="px-4 py-3">
+                                    <div className="flex justify-center">
+                                      <Button
+                                        variant="ghost"
+                                        size="sm"
+                                        onClick={() => deleteEntry(entry.id)}
+                                        disabled={shouldDisableEditing()}
+                                        className="text-red-600 hover:text-red-800 hover:bg-red-50"
                                       >
-                                        <SelectTrigger className="w-full">
-                                          <SelectValue placeholder="Select project" />
-                                        </SelectTrigger>
-                                        <SelectContent>
-                                          {userProjects.map(project => (
-                                            <SelectItem key={project.id} value={project.id.toString()}>
-                                              {project.name}
-                                            </SelectItem>
-                                          ))}
-                                        </SelectContent>
-                                      </Select>
-                                    </td>
-                                    <td className="p-3">
-                                      <Select
-                                        value={entry.taskId}
-                                        onValueChange={(value) => handleTaskChange(entry.id, value)}
-                                        disabled={shouldDisableEditing() || !entry.projectId}
-                                      >
-                                        <SelectTrigger className="w-full">
-                                          <SelectValue placeholder={entry.projectId ? "Select task" : "Select project first"} />
-                                        </SelectTrigger>
-                                        <SelectContent>
-                                          <SelectItem value="no-task">No specific task</SelectItem>
-                                          {entry.projectId && (() => {
-                                            const tasks = getTasksForProject(entry.projectId);
-                                            if (tasks && Array.isArray(tasks) && tasks.length > 0) {
-                                              return tasks.map(task => (
-                                                <SelectItem key={task.id} value={task.id.toString()}>
-                                                  {task.title} {task.status && task.status !== 'todo' ? `(${task.status})` : ''}
-                                                </SelectItem>
-                                              ));
-                                            } else {
-                                              return (
-                                                <SelectItem value="no-available-tasks" disabled>
-                                                  No tasks available for this project
-                                                </SelectItem>
-                                              );
-                                            }
-                                          })()}
-                                        </SelectContent>
-                                      </Select>
-                                    </td>
-                                    <td className="p-3">
-                                      <div className="flex justify-center">
-                                        <Input
-                                          type="number"
-                                          min="0"
-                                          max="24"
-                                          step="0.5"
-                                          value={entry.hours || 0}
-                                          onChange={(e) => handleHoursChange(entry.id, parseFloat(e.target.value) || 0)}
-                                          className="w-20 text-center"
-                                          disabled={shouldDisableEditing()}
-                                          placeholder="0.0"
-                                        />
-                                      </div>
-                                    </td>
-                                    <td className="p-3">
-                                      <div className="flex justify-center">
-                                        <Button
-                                          variant="ghost"
-                                          size="sm"
-                                          onClick={() => deleteEntry(entry.id)}
-                                          disabled={shouldDisableEditing()}
-                                          className="text-red-600 hover:text-red-800 hover:bg-red-50"
-                                        >
-                                          <Trash2 className="w-4 h-4" />
-                                        </Button>
-                                      </div>
-                                    </td>
-                                  </tr>
-                                ))}
-                              </tbody>
-                            </table>
-                          </div>
-                        ) : (
-                          <div className="text-center py-8 text-gray-500">
-                            <div className="flex flex-col items-center gap-2">
-                              <Plus className="w-8 h-8 text-gray-300" />
-                              <p>No entries for this day</p>
-                            </div>
-                          </div>
-                        )}
+                                        <Trash2 className="w-4 h-4" />
+                                      </Button>
+                                    </div>
+                                  </td>
+                                </tr>
+                              ))}
+                              
+                              {dateEntries.length === 0 && (
+                                <tr>
+                                  <td colSpan={5} className="px-4 py-8 text-center text-gray-500">
+                                    <div className="flex flex-col items-center gap-2">
+                                      <Plus className="w-8 h-8 text-gray-300" />
+                                      <p>No entries for this day</p>
+                                    </div>
+                                  </td>
+                                </tr>
+                              )}
+                            </tbody>
+                          </table>
+                        </div>
                         
                         <div className="flex justify-center pt-4 mt-4 border-t">
                           <Button
@@ -864,7 +854,7 @@ export function MyTimesheet({ user }: MyTimesheetProps) {
                             disabled={shouldDisableEditing()}
                           >
                             <Plus className="w-4 h-4" />
-                            Add Entry for {dayName}
+                            Add Entry for {formatDate(date)}
                           </Button>
                         </div>
                       </div>
@@ -874,43 +864,45 @@ export function MyTimesheet({ user }: MyTimesheetProps) {
               })}
 
               {/* Action Buttons */}
-              <div className="flex justify-between items-center pt-6 border-t">
-                <div className="text-sm text-gray-500">
-                  {entries.length} entries this week | Status: <span className="font-medium">{status.toUpperCase()}</span>
-                  {getReviewDetails() && (
-                    <span className="ml-2">• {getReviewDetails()?.message}</span>
-                  )}
-                </div>
-                <div className="flex gap-2">
-                  <Button
-                    variant="outline"
-                    onClick={handleSaveDraft}
-                    className="gap-2"
-                    disabled={shouldDisableEditing() || isSaving || isTimesheetApproved()}
-                  >
-                    <Save className="w-4 h-4" />
-                    {isSaving ? 'Saving...' : 'Save Draft'}
-                  </Button>
-                  <Button
-                    onClick={async () => {
-                      if (!isSaving) {
-                        try {
-                          await handleSaveDraft();
-                          setShowSubmitDialog(true);
-                        } catch (error) {
-                          console.error('Failed to save draft before submit:', error);
-                          toast.error('Failed to save draft before submission');
-                        }
-                      }
-                    }}
-                    className="gap-2"
-                    disabled={shouldDisableEditing() || isSaving || entries.length === 0 || isTimesheetApproved()}
-                  >
-                    <Send className="w-4 h-4" />
-                    {isTimesheetRejected() ? 'Resubmit Week' : 'Submit Week'}
-                  </Button>
-                </div>
-              </div>
+             {/* Action Buttons */}
+<div className="flex justify-between items-center pt-6 border-t">
+  <div className="text-sm text-gray-500">
+    {entries.length} entries this week | Status: <span className="font-medium">{status.toUpperCase()}</span>
+    {getReviewDetails() && (
+      <span className="ml-2">• {getReviewDetails()?.message}</span>
+    )}
+  </div>
+  <div className="flex gap-2">
+    <Button
+      variant="outline"
+      onClick={handleSaveDraft}
+      className="gap-2"
+      disabled={shouldDisableEditing() || isSaving || isTimesheetApproved()}
+    >
+      <Save className="w-4 h-4" />
+      {isSaving ? 'Saving...' : 'Save Draft'}
+    </Button>
+    <Button
+  onClick={async () => {
+    // First save as draft, then open submit dialog
+    if (!isSaving) {
+      try {
+        await handleSaveDraft();
+        setShowSubmitDialog(true);
+      } catch (error) {
+        console.error('Failed to save draft before submit:', error);
+        toast.error('Failed to save draft before submission');
+      }
+    }
+  }}
+  className="gap-2"
+  disabled={shouldDisableEditing() || isSaving || entries.length === 0 || isTimesheetApproved()}
+>
+  <Send className="w-4 h-4" />
+  {isTimesheetRejected() ? 'Resubmit Week' : 'Submit Week'}
+</Button>
+  </div>
+</div>
             </div>
           )}
         </CardContent>

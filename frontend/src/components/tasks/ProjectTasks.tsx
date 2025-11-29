@@ -1,40 +1,41 @@
 // ProjectTasks.tsx
-import React, { useState, useEffect } from 'react';
-// import { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { 
   Plus, 
+  Search, 
   ArrowLeft,
   MoreVertical,
   Edit,
   Trash2,
   Users,
   Calendar,
+  Clock,
   User,
   FolderKanban,
   Target,
   AlertCircle,
   Eye,
   GripVertical,
-  List,
-  Kanban,
-  Clock,
-  Loader2,
   ChevronDown,
-  ChevronRight
+  ChevronRight,
+  List,
+  Kanban
 } from 'lucide-react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../ui/card';
 import { Button } from '../ui/button';
+import { Input } from '../ui/input';
 import { Badge } from '../ui/badge';
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '../ui/dropdown-menu';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '../ui/dialog';
 import { Label } from '../ui/label';
 import { Textarea } from '../ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../ui/select';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '../ui/tabs';
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '../ui/accordion';
-import { Input } from '../ui/input';
 import { toast } from 'sonner';
-import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '../ui/collapsible';
+import { projectApi, taskApi, Project as ApiProject, Task, employeeApi, Employee } from '../../services/api';
+import { ApiError } from '../../services/api-client';
 
 // Dnd-kit imports
 import {
@@ -52,6 +53,7 @@ import {
   defaultDropAnimation,
 } from '@dnd-kit/core';
 import {
+  arrayMove,
   SortableContext,
   sortableKeyboardCoordinates,
   verticalListSortingStrategy,
@@ -59,139 +61,96 @@ import {
 } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
 
-interface ProjectTask {
-  id: number;
-  title: string;
-  description: string;
-  priority: 'low' | 'medium' | 'high';
-  status: 'todo' | 'in_progress' | 'done' | 'blocked';
-  assignee: string;
-  assigneeId: number;
-  assigned_by: string;
-  assigned_by_id: number;
-  due_date: string;
-  has_publish_date: boolean;
-  publish_date: string;
-  created_at: string;
-  blocker_reason?: string;
+interface ProjectTasksProps {
+  user: any;
 }
 
-interface Project {
-  id: string;
-  name: string;
-  client: string;
-  manager: string;
-  start_date: string;
-  end_date: string;
-  status: string;
-  members: any[];
+// Update the ProjectTask interface
+interface ProjectTask extends Task {
+  assignee_name?: string;
+  assignee_id?: number;
+  has_publish_date?: boolean;
+  publish_date?: string;
 }
 
+
+// Update KANBAN_COLUMNS to match backend status values
 const KANBAN_COLUMNS = [
   { id: 'todo', title: 'To Do', color: 'bg-gray-100', status: 'todo' },
   { id: 'in_progress', title: 'In Progress', color: 'bg-blue-50', status: 'in_progress' },
   { id: 'done', title: 'Done', color: 'bg-green-50', status: 'done' },
-  { id: 'blocked', title: 'Blockers', color: 'bg-red-50', status: 'blocked' },
+  { id: 'blocked', title: 'Blocked', color: 'bg-red-50', status: 'blocked' },
 ];
 
+// Tab view status options
 const TAB_STATUS_OPTIONS = [
   { id: 'all', title: 'All Tasks', status: 'all' },
   { id: 'todo', title: 'To Do', status: 'todo' },
   { id: 'in_progress', title: 'In Progress', status: 'in_progress' },
+  { id: 'blocked', title: 'Blocked', status: 'blocked' },
   { id: 'done', title: 'Done', status: 'done' },
-  { id: 'blocked', title: 'Blockers', status: 'blocked' },
 ];
 
-// Mock data
-const mockProjects: Project[] = [
-  {
-    id: '1',
-    name: 'E-commerce Platform',
-    client: 'Retail Corp',
-    manager: 'John Doe',
-    start_date: '2024-10-15',
-    end_date: '2025-01-15',
-    status: 'active',
-    members: [
-      { id: 1, name: 'John Doe', role: 'Manager' },
-      { id: 2, name: 'Jane Smith', role: 'Developer' },
-      { id: 3, name: 'Mike Johnson', role: 'Designer' },
-      { id: 4, name: 'Sarah Wilson', role: 'QA' }
-    ]
-  }
-];
+// Helper function to map frontend display names to backend status values
+const getBackendStatus = (frontendStatus: string): string => {
+  const statusMap: { [key: string]: string } = {
+    'todo': 'todo',
+    'in-progress': 'in_progress',
+    'in_progress': 'in_progress',
+    'blocked': 'blocked',
+    'done': 'done'
+  };
+  return statusMap[frontendStatus] || frontendStatus;
+};
 
-const mockTasks: ProjectTask[] = [
-  {
-    id: 1,
-    title: 'Design user authentication flow',
-    description: 'Create wireframes and user stories for login/signup functionality',
-    priority: 'high',
-    status: 'todo',
-    assignee: 'Mike Johnson',
-    assigneeId: 3,
-    assigned_by: 'John Doe',
-    assigned_by_id: 1,
-    due_date: '2024-11-15',
-    has_publish_date: true,
-    publish_date: '2024-11-20',
-    created_at: '2024-10-01'
-  },
-  {
-    id: 2,
-    title: 'Implement product catalog API',
-    description: 'Build REST APIs for product management and search',
-    priority: 'high',
-    status: 'in_progress',
-    assignee: 'Jane Smith',
-    assigneeId: 2,
-    assigned_by: 'John Doe',
-    assigned_by_id: 1,
-    due_date: '2024-11-20',
-    has_publish_date: false,
-    publish_date: '',
-    created_at: '2024-10-02'
-  },
-  {
-    id: 3,
-    title: 'Setup database schema',
-    description: 'Design and implement PostgreSQL database schema',
-    priority: 'medium',
-    status: 'done',
-    assignee: 'John Doe',
-    assigneeId: 1,
-    assigned_by: 'Jane Smith',
-    assigned_by_id: 2,
-    due_date: '2024-10-25',
-    has_publish_date: false,
-    publish_date: '',
-    created_at: '2024-09-28'
-  },
-  {
-    id: 4,
-    title: 'Payment gateway integration',
-    description: 'Waiting for API credentials from finance team',
-    priority: 'high',
-    status: 'blocked',
-    assignee: 'Jane Smith',
-    assigneeId: 2,
-    assigned_by: 'John Doe',
-    assigned_by_id: 1,
-    due_date: '2024-12-01',
-    has_publish_date: true,
-    publish_date: '2024-12-05',
-    created_at: '2024-10-05',
-    blocker_reason: 'Waiting for API credentials from the finance department. Expected delivery: 2024-11-15'
-  }
-];
+// Helper function to map backend status to frontend display
+const getFrontendStatus = (backendStatus: string): string => {
+  const statusMap: { [key: string]: string } = {
+    'todo': 'todo',
+    'in_progress': 'in_progress',
+    'blocked': 'blocked',
+    'done': 'done'
+  };
+  return statusMap[backendStatus] || backendStatus;
+};
+
+// Helper function to capitalize text
+const capitalize = (text: string): string => {
+  return text.charAt(0).toUpperCase() + text.slice(1);
+};
+
+// Helper function to capitalize display text
+const capitalizeDisplayText = (text: string): string => {
+  if (!text) return text;
+  return text.charAt(0).toUpperCase() + text.slice(1);
+};
 
 // Custom drop animation
 const dropAnimationConfig: DropAnimation = {
   ...defaultDropAnimation,
   dragSourceOpacity: 0.5,
+  keyframe({ transform }) {
+    return [
+      { opacity: 1, transform: CSS.Transform.toString(transform.initial) },
+      { opacity: 0, transform: CSS.Transform.toString(transform.final) },
+    ];
+  },
 };
 
 // Sortable Task Card Component
+interface SortableTaskCardProps {
+  task: ProjectTask;
+  onTaskClick: (task: ProjectTask) => void;
+  onEditTask: (task: ProjectTask) => void;
+  onDeleteClick: (task: ProjectTask) => void;
+  onStatusChange: (taskId: number, newStatus: string) => void;
+  getPriorityBadge: (priority: string) => JSX.Element;
+  companyUsers: Employee[];
+  dropdownOpen: number | null;
+  setDropdownOpen: (id: number | null) => void;
+  isDragging?: boolean;
+}
+
 function SortableTaskCard({
   task,
   onTaskClick,
@@ -199,27 +158,45 @@ function SortableTaskCard({
   onDeleteClick,
   onStatusChange,
   getPriorityBadge,
+  companyUsers,
   dropdownOpen,
   setDropdownOpen,
-}: any) {
+  isDragging = false
+}: SortableTaskCardProps) {
   const {
     attributes,
     listeners,
     setNodeRef,
     transform,
     transition,
-    isDragging,
+    isDragging: isSortableDragging,
   } = useSortable({ id: task.id });
 
   const style = {
     transform: CSS.Transform.toString(transform),
     transition,
-    opacity: isDragging ? 0.5 : 1,
+    opacity: isSortableDragging ? 0.8 : 1,
   };
 
-  const handleMouseDown = (e: React.MouseEvent) => {
-    e.stopPropagation();
+  const handleViewTask = (e: React.MouseEvent) => {
     e.preventDefault();
+    e.stopPropagation();
+    setDropdownOpen(null);
+    onTaskClick(task);
+  };
+
+  const handleEditTask = (e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setDropdownOpen(null);
+    onEditTask(task);
+  };
+
+  const handleDeleteTask = (e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setDropdownOpen(null);
+    onDeleteClick(task);
   };
 
   return (
@@ -227,29 +204,33 @@ function SortableTaskCard({
       ref={setNodeRef} 
       style={style} 
       {...attributes}
-      className="transition-all duration-200"
+      className={`transition-all duration-200 ${isSortableDragging ? 'z-50' : ''}`}
     >
       <Card 
         className={`cursor-pointer hover:shadow-md transition-all duration-200 h-full flex flex-col ${
-          isDragging 
-            ? 'shadow-xl ring-2 ring-blue-500 scale-105 z-50' 
+          isSortableDragging 
+            ? 'shadow-xl ring-2 ring-blue-500 scale-105' 
             : 'hover:scale-[1.02] hover:shadow-lg'
-        }`}
+        } ${isDragging ? 'opacity-30' : ''}`}
+        onClick={() => onTaskClick(task)}
       >
-        <CardContent className="p-4 flex-1 flex flex-col" onClick={() => onTaskClick(task)}>
+        <CardContent className="p-4 flex-1 flex flex-col">
           <div className="space-y-3 flex-1">
             <div className="flex items-start justify-between">
               <div className="flex items-start gap-2 flex-1">
                 <div 
                   className="mt-1 cursor-grab active:cursor-grabbing hover:bg-blue-100 p-1 rounded transition-colors duration-150"
                   {...listeners}
-                  onMouseDown={handleMouseDown}
+                  onMouseDown={(e) => {
+                    e.stopPropagation();
+                    e.preventDefault();
+                  }}
                   title="Drag to move"
                 >
                   <GripVertical className="w-4 h-4 text-gray-500 hover:text-blue-600 transition-colors" />
                 </div>
                 <h4 className="font-medium text-sm leading-tight flex-1">
-                  {task.title}
+                  {capitalizeDisplayText(task.title)}
                 </h4>
               </div>
               <div className="relative">
@@ -273,21 +254,21 @@ function SortableTaskCard({
                     <div className="py-1">
                       <button
                         className="flex items-center w-full px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 transition-colors"
-                        onClick={() => onTaskClick(task)}
+                        onClick={handleViewTask}
                       >
                         <Eye className="w-4 h-4 mr-2" />
                         View Details
                       </button>
                       <button
                         className="flex items-center w-full px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 transition-colors"
-                        onClick={() => onEditTask(task)}
+                        onClick={handleEditTask}
                       >
                         <Edit className="w-4 h-4 mr-2" />
                         Edit
                       </button>
                       <button
                         className="flex items-center w-full px-4 py-2 text-sm text-red-600 hover:bg-gray-100 transition-colors"
-                        onClick={() => onDeleteClick(task)}
+                        onClick={handleDeleteTask}
                       >
                         <Trash2 className="w-4 h-4 mr-2" />
                         Delete
@@ -300,7 +281,7 @@ function SortableTaskCard({
             
             {task.description && (
               <p className="text-xs text-gray-600 line-clamp-2">
-                {task.description}
+                {capitalizeDisplayText(task.description)}
               </p>
             )}
             
@@ -310,10 +291,7 @@ function SortableTaskCard({
                 value={task.status}
                 onValueChange={(value) => onStatusChange(task.id, value)}
               >
-                <SelectTrigger 
-                  className="h-6 text-xs w-24 transition-all hover:bg-gray-50" 
-                  onClick={(e) => e.stopPropagation()}
-                >
+                <SelectTrigger className="h-6 text-xs w-24 transition-all hover:bg-gray-50" onClick={(e) => e.stopPropagation()}>
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
@@ -326,33 +304,25 @@ function SortableTaskCard({
               </Select>
             </div>
 
-            {task.assignee && (
+            {task.assigned_to && (
               <div className="flex items-center gap-2 text-xs text-gray-500">
                 <User className="w-3 h-3" />
-                <span>Assigned to: {task.assignee}</span>
+                <span>{task.assignee_name || 'Unassigned'}</span>
               </div>
             )}
-
             {task.has_publish_date && task.publish_date && (
-              <div className="flex items-center gap-2 text-xs text-purple-500">
-                <Calendar className="w-3 h-3" />
-                <span>Publish: {new Date(task.publish_date).toLocaleDateString()}</span>
-              </div>
-            )}
-
+  <div className="flex items-center gap-2 text-xs text-purple-500">
+    <Calendar className="w-3 h-3" />
+    <span>Publish: {new Date(task.publish_date).toLocaleDateString()}</span>
+  </div>
+)}
             {task.due_date && (
               <div className="flex items-center gap-2 text-xs text-gray-500">
                 <Calendar className="w-3 h-3" />
-                <span>Due: {new Date(task.due_date).toLocaleDateString()}</span>
+                <span> Due: {new Date(task.due_date).toLocaleDateString()}</span>
               </div>
             )}
 
-            {task.status === 'blocked' && task.blocker_reason && (
-              <div className="flex items-start gap-2 text-xs text-red-600 bg-red-50 p-2 rounded">
-                <AlertCircle className="w-3 h-3 mt-0.5 flex-shrink-0" />
-                <span className="flex-1">{task.blocker_reason}</span>
-              </div>
-            )}
           </div>
         </CardContent>
       </Card>
@@ -360,7 +330,7 @@ function SortableTaskCard({
   );
 }
 
-// Task Card for Drag Overlay
+// Task Card for Drag Overlay (non-sortable version)
 function TaskCardOverlay({ 
   task, 
   getPriorityBadge 
@@ -369,7 +339,7 @@ function TaskCardOverlay({
   getPriorityBadge: (priority: string) => JSX.Element;
 }) {
   return (
-    <Card className="cursor-grabbing shadow-xl ring-2 ring-blue-500 scale-105 transition-all duration-200 z-50">
+    <Card className="cursor-grabbing shadow-xl ring-2 ring-blue-500 scale-105 transition-all duration-200">
       <CardContent className="p-4 flex-1 flex flex-col">
         <div className="space-y-3 flex-1">
           <div className="flex items-start justify-between">
@@ -378,17 +348,16 @@ function TaskCardOverlay({
                 <GripVertical className="w-4 h-4 text-blue-600" />
               </div>
               <h4 className="font-medium text-sm leading-tight flex-1">
-                {task.title}
+                {capitalizeDisplayText(task.title)}
               </h4>
             </div>
           </div>
           
           {task.description && (
             <p className="text-xs text-gray-600 line-clamp-2">
-              {task.description}
+              {capitalizeDisplayText(task.description)}
             </p>
           )}
-          
           <div className="flex items-center justify-between">
             {getPriorityBadge(task.priority)}
             <div className="h-6 text-xs w-24 px-2 py-1 bg-white border rounded-md flex items-center justify-center">
@@ -396,33 +365,26 @@ function TaskCardOverlay({
             </div>
           </div>
 
-          {task.assignee && (
+          {task.assigned_to && (
             <div className="flex items-center gap-2 text-xs text-gray-500">
               <User className="w-3 h-3" />
-              <span>Assigned to: {task.assignee}</span>
+              <span>{task.assignee_name || 'Unassigned'}</span>
             </div>
           )}
-
-          {task.assigned_by && (
-            <div className="flex items-center gap-2 text-xs text-blue-500">
-              <User className="w-3 h-3" />
-              <span>Assigned by: {task.assigned_by}</span>
-            </div>
-          )}
-
-          {task.has_publish_date && task.publish_date && (
+  {task.has_publish_date && task.publish_date && (
             <div className="flex items-center gap-2 text-xs text-purple-500">
               <Calendar className="w-3 h-3" />
               <span>Publish: {new Date(task.publish_date).toLocaleDateString()}</span>
             </div>
           )}
-
           {task.due_date && (
             <div className="flex items-center gap-2 text-xs text-gray-500">
               <Calendar className="w-3 h-3" />
               <span>Due: {new Date(task.due_date).toLocaleDateString()}</span>
             </div>
           )}
+
+        
         </div>
       </CardContent>
     </Card>
@@ -430,6 +392,21 @@ function TaskCardOverlay({
 }
 
 // Sortable Column Component
+interface SortableColumnProps {
+  column: typeof KANBAN_COLUMNS[0];
+  tasks: ProjectTask[];
+  onTaskClick: (task: ProjectTask) => void;
+  onEditTask: (task: ProjectTask) => void;
+  onDeleteClick: (task: ProjectTask) => void;
+  onStatusChange: (taskId: number, newStatus: string) => void;
+  getPriorityBadge: (priority: string) => JSX.Element;
+  companyUsers: Employee[];
+  dropdownOpen: number | null;
+  setDropdownOpen: (id: number | null) => void;
+  onAddTask: (status: string) => void;
+  isOver?: boolean;
+}
+
 function SortableColumn({
   column,
   tasks,
@@ -438,11 +415,12 @@ function SortableColumn({
   onDeleteClick,
   onStatusChange,
   getPriorityBadge,
+  companyUsers,
   dropdownOpen,
   setDropdownOpen,
   onAddTask,
   isOver = false
-}: any) {
+}: SortableColumnProps) {
   const {
     attributes,
     listeners,
@@ -456,12 +434,45 @@ function SortableColumn({
     transition,
   };
 
+  // Get the appropriate icon for each column
+  const getColumnIcon = (columnId: string) => {
+    switch (columnId) {
+      case 'todo':
+        return <Plus className="w-8 h-8 mx-auto" />;
+      case 'in_progress':
+        return <Clock className="w-8 h-8 mx-auto" />;
+      case 'done':
+        return <Target className="w-8 h-8 mx-auto" />;
+      case 'blocked':
+        return <AlertCircle className="w-8 h-8 mx-auto" />;
+      default:
+        return <Plus className="w-8 h-8 mx-auto" />;
+    }
+  };
+
+  // Get the empty state message for each column
+  const getEmptyStateMessage = (columnId: string) => {
+    switch (columnId) {
+      case 'todo':
+        return 'Create a new task to get started';
+      case 'in_progress':
+        return 'Move tasks from "To Do" to get started';
+      case 'done':
+        return 'Complete some tasks to see them here';
+      case 'blocked':
+        return 'No blocked tasks at the moment';
+      default:
+        return 'No tasks';
+    }
+  };
+
   return (
     <div 
       ref={setNodeRef}
       style={style}
       {...attributes}
       className="space-y-4 transition-all duration-200"
+      data-column={column.id}
     >
       <div className="flex items-center justify-between">
         <h3 className="font-semibold text-lg">{column.title}</h3>
@@ -486,9 +497,9 @@ function SortableColumn({
             : 'hover:shadow-md'
         }`}
       >
-        <SortableContext items={tasks.map((task: ProjectTask) => task.id)} strategy={verticalListSortingStrategy}>
+        <SortableContext items={tasks.map(task => task.id)} strategy={verticalListSortingStrategy}>
           {tasks.length > 0 ? (
-            tasks.map((task: ProjectTask) => (
+            tasks.map(task => (
               <SortableTaskCard
                 key={task.id}
                 task={task}
@@ -497,6 +508,7 @@ function SortableColumn({
                 onDeleteClick={onDeleteClick}
                 onStatusChange={onStatusChange}
                 getPriorityBadge={getPriorityBadge}
+                companyUsers={companyUsers}
                 dropdownOpen={dropdownOpen}
                 setDropdownOpen={setDropdownOpen}
               />
@@ -509,11 +521,14 @@ function SortableColumn({
                   : 'border-gray-300 hover:border-gray-400'
               }`}
             >
+              <div className="text-gray-400 mb-2 transition-all duration-300">
+                {getColumnIcon(column.id)}
+              </div>
               <p className="text-sm text-gray-500 font-medium mb-2 transition-all duration-300">
                 {isOver ? 'Drop task here' : `No ${column.title.toLowerCase()} tasks`}
               </p>
               <p className="text-xs text-gray-400 transition-all duration-300">
-                {isOver ? 'Release to move task' : 'No tasks in this column'}
+                {isOver ? 'Release to move task' : getEmptyStateMessage(column.id)}
               </p>
               {column.id === 'todo' && !isOver && (
                 <Button
@@ -533,500 +548,399 @@ function SortableColumn({
     </div>
   );
 }
+// Task List Item Component for Tab View
+interface TaskListItemProps {
+  task: ProjectTask;
+  onTaskClick: (task: ProjectTask) => void;
+  onEditTask: (task: ProjectTask) => void;
+  onDeleteClick: (task: ProjectTask) => void;
+  onStatusChange: (taskId: number, newStatus: string) => void;
+  getPriorityBadge: (priority: string) => JSX.Element;
+  companyUsers: Employee[];
+  dropdownOpen: number | null;
+  setDropdownOpen: (id: number | null) => void;
+}
 
-
-// List View Task Row Component
-function ListViewTaskRow({ 
-  task, 
-  onTaskClick, 
-  onEditTask, 
-  onDeleteClick, 
-  onStatusChange, 
+function TaskListItem({
+  task,
+  onTaskClick,
+  onEditTask,
+  onDeleteClick,
+  onStatusChange,
   getPriorityBadge,
+  companyUsers,
   dropdownOpen,
-  setDropdownOpen 
-}: any) {
+  setDropdownOpen
+}: TaskListItemProps) {
+  const handleViewTask = (e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setDropdownOpen(null);
+    onTaskClick(task);
+  };
+
+  const handleEditTask = (e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setDropdownOpen(null);
+    onEditTask(task);
+  };
+
+  const handleDeleteTask = (e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setDropdownOpen(null);
+    onDeleteClick(task);
+  };
+
   return (
-    <div className="border-b border-gray-200 last:border-b-0">
-      <div className="p-4 hover:bg-gray-50 transition-colors duration-150">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-4 flex-1">
-            <div className="flex items-center gap-3 flex-1 min-w-0">
-              <div className="flex-shrink-0 w-6">
-                <div className="w-2 h-2 bg-gray-400 rounded-full"></div>
-              </div>
-              <div className="flex-1 min-w-0">
-                <h4 
-                  className="font-medium text-sm truncate cursor-pointer hover:text-blue-600 transition-colors"
-                  onClick={() => onTaskClick(task)}
-                >
-                  {task.title}
-                </h4>
-                {task.description && (
-                  <p className="text-xs text-gray-500 truncate mt-1">
-                    {task.description}
-                  </p>
-                )}
-              </div>
-            </div>
+    <div className="border rounded-lg p-4 hover:shadow-md transition-all duration-200 bg-white">
+      <div className="flex items-start justify-between">
+        <div className="flex items-start gap-3 flex-1">
+          <div className="flex-shrink-0 mt-1">
+            <div className="w-2 h-2 rounded-full bg-blue-500"></div>
+          </div>
+          <div className="flex-1 min-w-0">
+            <h4 
+              className="font-medium text-base mb-2 cursor-pointer hover:text-blue-600 transition-colors"
+              onClick={() => onTaskClick(task)}
+            >
+              {capitalizeDisplayText(task.title)}
+            </h4>
             
-            <div className="flex items-center gap-4 flex-shrink-0">
-              <div className="w-24">
+            {task.description && (
+              <p className="text-sm text-gray-600 mb-3 line-clamp-2">
+                {capitalizeDisplayText(task.description)}
+              </p>
+            )}
+            
+            <div className="flex flex-wrap items-center gap-4 text-sm text-gray-500">
+              <div className="flex items-center gap-1">
                 {getPriorityBadge(task.priority)}
               </div>
-              
-              <div className="w-32">
-                <Select
-                  value={task.status}
-                  onValueChange={(value) => onStatusChange(task.id, value)}
-                >
-                  <SelectTrigger className="h-7 text-xs">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {KANBAN_COLUMNS.map(col => (
-                      <SelectItem key={col.id} value={col.status}>
-                        {col.title}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+              {task.has_publish_date && task.publish_date && (
+  <div className="flex items-center gap-1">
+    <Calendar className="w-4 h-4 text-purple-500" />
+    <span className="text-purple-600">
+      Publish: {new Date(task.publish_date).toLocaleDateString()}
+    </span>
+  </div>
+)}
+              <div className="flex items-center gap-1">
+                <Calendar className="w-4 h-4" />
+                <span>
+                  Due:
+                  {task.due_date 
+                    ? new Date(task.due_date).toLocaleDateString()
+                    : 'No due date'
+                  }
+                </span>
               </div>
               
-              <div className="w-32 text-sm text-gray-600 truncate">
-                {task.assignee}
-              </div>
+              {task.assigned_to && (
+                <div className="flex items-center gap-1">
+                  <User className="w-4 h-4" />
+                  <span>{task.assignee_name || 'Unassigned'}</span>
+                </div>
+              )}
               
-              <div className="w-24 text-xs text-gray-500">
-                {task.due_date ? new Date(task.due_date).toLocaleDateString() : 'No due date'}
-              </div>
-              
-              <div className="relative">
-                <Button 
-                  variant="ghost" 
-                  size="sm"
-                  className="h-8 w-8 p-0"
-                  onClick={(e) => {
-                    e.preventDefault();
-                    e.stopPropagation();
-                    setDropdownOpen(dropdownOpen === task.id ? null : task.id);
-                  }}
-                >
-                  <MoreVertical className="w-4 h-4" />
-                </Button>
-                
-                {dropdownOpen === task.id && (
-                  <div 
-                    className="absolute right-0 top-full mt-1 w-48 bg-white rounded-md shadow-lg border z-50 animate-in fade-in-0 zoom-in-95"
-                    onClick={(e) => e.stopPropagation()}
-                  >
-                    <div className="py-1">
-                      <button
-                        className="flex items-center w-full px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 transition-colors"
-                        onClick={() => onTaskClick(task)}
-                      >
-                        <Eye className="w-4 h-4 mr-2" />
-                        View Details
-                      </button>
-                      <button
-                        className="flex items-center w-full px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 transition-colors"
-                        onClick={() => onEditTask(task)}
-                      >
-                        <Edit className="w-4 h-4 mr-2" />
-                        Edit
-                      </button>
-                      <button
-                        className="flex items-center w-full px-4 py-2 text-sm text-red-600 hover:bg-gray-100 transition-colors"
-                        onClick={() => onDeleteClick(task)}
-                      >
-                        <Trash2 className="w-4 h-4 mr-2" />
-                        Delete
-                      </button>
-                    </div>
-                  </div>
-                )}
+              <div className="flex items-center gap-1">
+                <span className="text-xs font-medium px-2 py-1 bg-gray-100 rounded">
+                  {KANBAN_COLUMNS.find(col => col.status === task.status)?.title || task.status}
+                </span>
               </div>
             </div>
           </div>
         </div>
         
-        {task.status === 'blocked' && task.blocker_reason && (
-          <div className="flex items-start gap-2 text-xs text-red-600 bg-red-50 p-2 rounded mt-2">
-            <AlertCircle className="w-3 h-3 mt-0.5 flex-shrink-0" />
-            <span className="flex-1">{task.blocker_reason}</span>
-          </div>
-        )}
-      </div>
-    </div>
-  );
-}
-// Status Accordion Section Component
-function StatusAccordionSection({ 
-  status, 
-  title, 
-  tasks, 
-  onTaskClick, 
-  onEditTask, 
-  onDeleteClick, 
-  onStatusChange, 
-  getPriorityBadge,
-  dropdownOpen,
-  setDropdownOpen 
-}: any) {
-  return (
-    <Collapsible className="border-b border-gray-200 last:border-b-0 cursor-pointer">
-      <CollapsibleTrigger asChild>
-        <button className="cursor-pointer flex items-center justify-between w-full px-6 py-4 hover:bg-gray-50 transition-colors text-left">
-          <div className="flex items-center justify-between flex-1 pr-4">
-            <div className="flex items-center gap-3">
-              <div className={`w-3 h-3 rounded-full ${
-                status === 'todo' ? 'bg-gray-400' :
-                status === 'in_progress' ? 'bg-blue-500' :
-                status === 'done' ? 'bg-green-500' :
-                'bg-red-500'
-              }`}></div>
-              <span className="font-semibold text-lg">{title}</span>
-            </div>
-            <div className="flex items-center gap-4">
-              <Badge variant="secondary" className="text-sm">
-                {tasks.length} task{tasks.length !== 1 ? 's' : ''}
-              </Badge>
-              <div className="flex items-center gap-2 text-sm text-gray-500">
-                <span>Click to {tasks.length > 0 ? 'expand' : 'view'}</span>
-                <ChevronDown className="w-4 h-4 transition-transform duration-200 collapsible-chevron" />
-              </div>
-            </div>
-          </div>
-        </button>
-      </CollapsibleTrigger>
-      
-      <CollapsibleContent>
-        {tasks.length > 0 ? (
-          <div className="border-t border-gray-200">
-            {/* Table Header */}
-            <div className="border-b border-gray-200 bg-gray-50 px-6 py-3">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-4 flex-1">
-                  <div className="flex items-center gap-3 flex-1">
-                    <div className="flex-shrink-0 w-6">
-           
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <span className="text-xs font-medium text-gray-500">TASK</span>
-                    </div>
-                  </div>
-                  
-                  <div className="flex items-center gap-4 flex-shrink-0">
-                    <div className="w-24">
-                      <span className="text-xs font-medium text-gray-500">PRIORITY</span>
-                    </div>
-                    <div className="w-32">
-                      <span className="text-xs font-medium text-gray-500">STATUS</span>
-                    </div>
-                    <div className="w-32">
-                      <span className="text-xs font-medium text-gray-500">ASSIGNEE</span>
-                    </div>
-                    <div className="w-24">
-                      <span className="text-xs font-medium text-gray-500">DUE DATE</span>
-                    </div>
-                    <div className="w-8">
-                      <span className="text-xs font-medium text-gray-500">ACTIONS</span>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            {/* Tasks List */}
-            <div className="divide-y divide-gray-200">
-              {tasks.map((task: ProjectTask, index: number) => (
-                <ListViewTaskRow
-                  key={task.id}
-                  task={task}
-                  index={index}
-                  onTaskClick={onTaskClick}
-                  onEditTask={onEditTask}
-                  onDeleteClick={onDeleteClick}
-                  onStatusChange={onStatusChange}
-                  getPriorityBadge={getPriorityBadge}
-                  dropdownOpen={dropdownOpen}
-                  setDropdownOpen={setDropdownOpen}
-                />
+        <div className="relative flex-shrink-0">
+          <Select
+            value={task.status}
+            onValueChange={(value) => onStatusChange(task.id, value)}
+          >
+            <SelectTrigger className="h-8 text-sm w-32 transition-all hover:bg-gray-50 mb-2">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {KANBAN_COLUMNS.map(col => (
+                <SelectItem key={col.id} value={col.status}>
+                  {col.title}
+                </SelectItem>
               ))}
-            </div>
-          </div>
-        ) : (
-          <div className="flex flex-col items-center justify-center py-8 text-center px-6 border-t border-gray-200">
-            <div className="w-12 h-12 bg-gray-100 rounded-full flex items-center justify-center mb-3">
-              <Target className="w-6 h-6 text-gray-400" />
-            </div>
-            <h3 className="text-base font-medium text-gray-900 mb-1">No tasks in {title}</h3>
-            <p className="text-gray-500 text-sm">
-              No tasks are currently in this status.
-            </p>
-          </div>
-        )}
-      </CollapsibleContent>
-    </Collapsible>
-  );
-}
-// List View Component
-function ListView({ 
-  tasks, 
-  activeTab, 
-  onTaskClick, 
-  onEditTask, 
-  onDeleteClick, 
-  onStatusChange, 
-  getPriorityBadge,
-  dropdownOpen,
-  setDropdownOpen 
-}: any) {
-  const filteredTasks = activeTab === 'all' 
-    ? tasks 
-    : tasks.filter((task: ProjectTask) => task.status === activeTab);
-
-  const getStatusCount = (status: string) => {
-    return tasks.filter((task: ProjectTask) => task.status === status).length;
-  };
-
-  // Group tasks by status for accordion view
-  const tasksByStatus = {
-    todo: tasks.filter((task: ProjectTask) => task.status === 'todo'),
-    in_progress: tasks.filter((task: ProjectTask) => task.status === 'in_progress'),
-    done: tasks.filter((task: ProjectTask) => task.status === 'done'),
-    blocked: tasks.filter((task: ProjectTask) => task.status === 'blocked'),
-  };
-
-  const statusConfig = [
-    { status: 'todo', title: 'To Do', color: 'bg-gray-400' },
-    { status: 'in_progress', title: 'In Progress', color: 'bg-blue-500' },
-    { status: 'done', title: 'Done', color: 'bg-green-500' },
-    { status: 'blocked', title: 'Blockers', color: 'bg-red-500' },
-  ];
-
-  return (
-    <div className="space-y-6">
-      {/* Status Summary */}
-      {/* <div className="grid grid-cols-5 gap-4">
-        {TAB_STATUS_OPTIONS.map((tab) => (
-          <Card key={tab.id} className={`transition-all duration-200 hover:shadow-md ${
-            activeTab === tab.status ? 'ring-2 ring-blue-500' : ''
-          }`}>
-            <CardContent className="p-4 text-center">
-              <div className="text-2xl font-bold text-gray-900">
-                {tab.status === 'all' ? tasks.length : getStatusCount(tab.status)}
-              </div>
-              <div className="text-sm text-gray-600 mt-1">{tab.title}</div>
-            </CardContent>
-          </Card>
-        ))}
-      </div> */}
-
-      {/* Tasks Display */}
-      <Card>
-        <CardHeader className="pb-3">
-          <CardTitle className="text-lg flex items-center gap-2">
-            <List className="w-5 h-5" />
-            Tasks List - {TAB_STATUS_OPTIONS.find(tab => tab.status === activeTab)?.title}
-          </CardTitle>
-          <CardDescription>
-            {filteredTasks.length} task{filteredTasks.length !== 1 ? 's' : ''} found
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="p-0">
-          {activeTab === 'all' ? (
-            // Collapsible view for All Tasks
-            <div className="divide-y divide-gray-200">
-              {statusConfig.map((statusInfo) => (
-                <StatusAccordionSection
-                  key={statusInfo.status}
-                  status={statusInfo.status}
-                  title={statusInfo.title}
-                  tasks={tasksByStatus[statusInfo.status as keyof typeof tasksByStatus]}
-                  onTaskClick={onTaskClick}
-                  onEditTask={onEditTask}
-                  onDeleteClick={onDeleteClick}
-                  onStatusChange={onStatusChange}
-                  getPriorityBadge={getPriorityBadge}
-                  dropdownOpen={dropdownOpen}
-                  setDropdownOpen={setDropdownOpen}
-                />
-              ))}
-            </div>
-          ) : (
-            // Table view for individual status tabs
-            <div>
-              {/* Table Header */}
-              <div className="border-b border-gray-200 bg-gray-50 px-6 py-3">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-4 flex-1">
-                    <div className="flex items-center gap-3 flex-1">
-                      <div className="flex-shrink-0 w-6">
-                    
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <span className="text-xs font-medium text-gray-500">TASK</span>
-                      </div>
-                    </div>
-                    
-                    <div className="flex items-center gap-4 flex-shrink-0">
-                      <div className="w-24">
-                        <span className="text-xs font-medium text-gray-500">PRIORITY</span>
-                      </div>
-                      <div className="w-32">
-                        <span className="text-xs font-medium text-gray-500">STATUS</span>
-                      </div>
-                      <div className="w-32">
-                        <span className="text-xs font-medium text-gray-500">ASSIGNEE</span>
-                      </div>
-                      <div className="w-24">
-                        <span className="text-xs font-medium text-gray-500">DUE DATE</span>
-                      </div>
-                      <div className="w-8">
-                        <span className="text-xs font-medium text-gray-500">ACTIONS</span>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-              {/* Table Body */}
-              <div className="divide-y divide-gray-200">
-                {filteredTasks.length > 0 ? (
-                  filteredTasks.map((task: ProjectTask, index: number) => (
-                    <ListViewTaskRow
-                      key={task.id}
-                      task={task}
-                      index={index}
-                      onTaskClick={onTaskClick}
-                      onEditTask={onEditTask}
-                      onDeleteClick={onDeleteClick}
-                      onStatusChange={onStatusChange}
-                      getPriorityBadge={getPriorityBadge}
-                      dropdownOpen={dropdownOpen}
-                      setDropdownOpen={setDropdownOpen}
-                    />
-                  ))
-                ) : (
-                  <div className="flex flex-col items-center justify-center py-12 text-center">
-                    <div className="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mb-4">
-                      <Target className="w-8 h-8 text-gray-400" />
-                    </div>
-                    <h3 className="text-lg font-medium text-gray-900 mb-2">No tasks found</h3>
-                    <p className="text-gray-500 max-w-sm">
-                      {activeTab === 'all' 
-                        ? 'No tasks have been created for this project yet.' 
-                        : `No tasks with status "${TAB_STATUS_OPTIONS.find(tab => tab.status === activeTab)?.title}" found.`
-                      }
-                    </p>
-                  </div>
-                )}
+            </SelectContent>
+          </Select>
+          
+          <Button 
+            variant="ghost" 
+            size="sm"
+            onClick={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              setDropdownOpen(dropdownOpen === task.id ? null : task.id);
+            }}
+          >
+            <MoreVertical className="w-4 h-4" />
+          </Button>
+          
+          {dropdownOpen === task.id && (
+            <div 
+              className="absolute right-0 top-full mt-1 w-48 bg-white rounded-md shadow-lg border z-50 animate-in fade-in-0 zoom-in-95"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="py-1">
+                <button
+                  className="flex items-center w-full px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 transition-colors"
+                  onClick={handleViewTask}
+                >
+                  <Eye className="w-4 h-4 mr-2" />
+                  View Details
+                </button>
+                <button
+                  className="flex items-center w-full px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 transition-colors"
+                  onClick={handleEditTask}
+                >
+                  <Edit className="w-4 h-4 mr-2" />
+                  Edit
+                </button>
+                <button
+                  className="flex items-center w-full px-4 py-2 text-sm text-red-600 hover:bg-gray-100 transition-colors"
+                  onClick={handleDeleteTask}
+                >
+                  <Trash2 className="w-4 h-4 mr-2" />
+                  Delete
+                </button>
               </div>
             </div>
           )}
-        </CardContent>
-      </Card>
-    </div>
-  );
-}
-
-// List View Task Row Component
-
-
-// Loading Component
-function LoadingSpinner() {
-  return (
-    <div className="flex flex-col items-center justify-center min-h-[400px] space-y-4">
-      <div className="relative">
-        <div className="w-16 h-16 border-4 border-blue-200 rounded-full animate-spin"></div>
-        <div className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2">
-          <Loader2 className="w-8 h-8 text-blue-600 animate-spin" />
         </div>
       </div>
-      <div className="text-center space-y-2">
-        <p className="text-lg font-semibold text-gray-700">Loading Project Tasks</p>
-        <p className="text-sm text-gray-500">Preparing your workspace...</p>
-      </div>
-      <div className="flex space-x-2">
-        <div className="w-2 h-2 bg-blue-600 rounded-full animate-bounce" style={{ animationDelay: '0ms' }}></div>
-        <div className="w-2 h-2 bg-blue-600 rounded-full animate-bounce" style={{ animationDelay: '150ms' }}></div>
-        <div className="w-2 h-2 bg-blue-600 rounded-full animate-bounce" style={{ animationDelay: '300ms' }}></div>
-      </div>
     </div>
   );
 }
 
-export function ProjectTasks() {
+// Tab View Component
+interface TabViewProps {
+  tasks: ProjectTask[];
+  onTaskClick: (task: ProjectTask) => void;
+  onEditTask: (task: ProjectTask) => void;
+  onDeleteClick: (task: ProjectTask) => void;
+  onStatusChange: (taskId: number, newStatus: string) => void;
+  getPriorityBadge: (priority: string) => JSX.Element;
+  companyUsers: Employee[];
+  dropdownOpen: number | null;
+  setDropdownOpen: (id: number | null) => void;
+  activeTab: string;
+}
+
+function TabView({
+  tasks,
+  onTaskClick,
+  onEditTask,
+  onDeleteClick,
+  onStatusChange,
+  getPriorityBadge,
+  companyUsers,
+  dropdownOpen,
+  setDropdownOpen,
+  activeTab
+}: TabViewProps) {
+  const filteredTasks = activeTab === 'all' 
+    ? tasks 
+    : tasks.filter(task => task.status === activeTab);
+
+  const tasksByStatus = TAB_STATUS_OPTIONS
+    .filter(option => option.id !== 'all')
+    .map(option => ({
+      ...option,
+      tasks: tasks.filter(task => task.status === option.status),
+      count: tasks.filter(task => task.status === option.status).length
+    }));
+
+  if (activeTab !== 'all') {
+    return (
+      <div className="space-y-4">
+        {filteredTasks.length > 0 ? (
+          filteredTasks.map(task => (
+            <TaskListItem
+              key={task.id}
+              task={task}
+              onTaskClick={onTaskClick}
+              onEditTask={onEditTask}
+              onDeleteClick={onDeleteClick}
+              onStatusChange={onStatusChange}
+              getPriorityBadge={getPriorityBadge}
+              companyUsers={companyUsers}
+              dropdownOpen={dropdownOpen}
+              setDropdownOpen={setDropdownOpen}
+            />
+          ))
+        ) : (
+          <div className="text-center py-12 border-2 border-dashed rounded-lg">
+            <div className="text-gray-400 mb-4">
+              <List className="w-12 h-12 mx-auto" />
+            </div>
+            <p className="text-lg font-medium text-gray-500 mb-2">No tasks found</p>
+            <p className="text-sm text-gray-400">
+              {activeTab === 'todo' && 'No tasks to do. Create a new task to get started!'}
+              {activeTab === 'in_progress' && 'No tasks in progress. Move tasks from "To Do" to get started!'}
+              {activeTab === 'done' && 'No completed tasks yet.'}
+              {activeTab === 'blocked' && 'No blocked tasks.'}
+            </p>
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  return (
+    <Accordion type="multiple" className="space-y-4">
+      {tasksByStatus.map((statusGroup) => (
+        <AccordionItem key={statusGroup.id} value={statusGroup.id} className="border rounded-lg">
+          <AccordionTrigger className="px-6 py-4 hover:no-underline hover:bg-gray-50 transition-colors bg-[#f2f2f2] cursor-pointer ">
+            <div className="flex items-center justify-between w-full pr-4">
+              <div className="flex items-center gap-3">
+                <div className={`w-3 h-3 rounded-full ${
+                  statusGroup.id === 'todo' ? 'bg-gray-400' :
+                  statusGroup.id === 'in_progress' ? 'bg-blue-500' :
+                  statusGroup.id === 'done' ? 'bg-green-500' : 'bg-red-500'
+                }`} />
+                <span className="font-semibold text-lg">{statusGroup.title}</span>
+                <Badge variant="secondary" className="ml-2">
+                  {statusGroup.count}
+                </Badge>
+              </div>
+             
+            </div>
+          </AccordionTrigger>
+          <AccordionContent className="px-6 pb-4 mt-2">
+            <div className="space-y-3">
+              {statusGroup.tasks.length > 0 ? (
+                statusGroup.tasks.map(task => (
+                  <TaskListItem
+                    key={task.id}
+                    task={task}
+                    onTaskClick={onTaskClick}
+                    onEditTask={onEditTask}
+                    onDeleteClick={onDeleteClick}
+                    onStatusChange={onStatusChange}
+                    getPriorityBadge={getPriorityBadge}
+                    companyUsers={companyUsers}
+                    dropdownOpen={dropdownOpen}
+                    setDropdownOpen={setDropdownOpen}
+                  />
+                ))
+              ) : (
+                <div className="text-center py-8 border-2 border-dashed rounded-lg">
+                  <p className="text-gray-500 mb-2">No {statusGroup.title.toLowerCase()} tasks</p>
+                  <p className="text-sm text-gray-400">
+                    {statusGroup.id === 'todo' && 'Create a new task to get started!'}
+                    {statusGroup.id === 'in_progress' && 'Move tasks from "To Do" to get started!'}
+                    {statusGroup.id === 'done' && 'Complete some tasks to see them here!'}
+                    {statusGroup.id === 'blocked' && 'No blocked tasks at the moment.'}
+                  </p>
+                </div>
+              )}
+            </div>
+          </AccordionContent>
+        </AccordionItem>
+      ))}
+    </Accordion>
+  );
+}
+
+export function ProjectTasks({ user }: ProjectTasksProps) {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
-  const [project, setProject] = useState<Project | null>(null);
+  const [project, setProject] = useState<ApiProject | null>(null);
   const [tasks, setTasks] = useState<ProjectTask[]>([]);
+  const [companyUsers, setCompanyUsers] = useState<Employee[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [showCreateTaskDialog, setShowCreateTaskDialog] = useState(false);
   const [showTaskDetailDialog, setShowTaskDetailDialog] = useState(false);
   const [showEditTaskDialog, setShowEditTaskDialog] = useState(false);
   const [selectedTask, setSelectedTask] = useState<ProjectTask | null>(null);
+  const [isCreatingTask, setIsCreatingTask] = useState(false);
+  const [isUpdatingTask, setIsUpdatingTask] = useState(false);
   const [dropdownOpen, setDropdownOpen] = useState<number | null>(null);
   const [showDeleteConfirmDialog, setShowDeleteConfirmDialog] = useState(false);
   const [taskToDelete, setTaskToDelete] = useState<ProjectTask | null>(null);
   const [activeTask, setActiveTask] = useState<ProjectTask | null>(null);
+  const [overColumn, setOverColumn] = useState<string | null>(null);
   const [activeView, setActiveView] = useState<'kanban' | 'list'>('kanban');
   const [activeTab, setActiveTab] = useState('all');
-  const [overColumn, setOverColumn] = useState<string | null>(null);
-  const [showBlockConfirmDialog, setShowBlockConfirmDialog] = useState(false);
-  const [taskToBlock, setTaskToBlock] = useState<{ taskId: number; newStatus: string } | null>(null);
-  const [blockerReason, setBlockerReason] = useState('');
+const [showBlockConfirmDialog, setShowBlockConfirmDialog] = useState(false);
+const [taskToBlock, setTaskToBlock] = useState<{ taskId: number; newStatus: string } | null>(null);
 
-  const [newTask, setNewTask] = useState({
-    title: '',
-    description: '',
-    priority: 'medium' as 'low' | 'medium' | 'high',
-    assignee: '',
-    due_date: '',
-    status: 'todo' as string,
-    has_publish_date: false,
-    publish_date: '',
-  });
 
-  const [editTask, setEditTask] = useState({
-    id: 0,
-    title: '',
-    description: '',
-    priority: 'medium' as 'low' | 'medium' | 'high',
-    assignee: '',
-    due_date: '',
-    status: 'todo' as string,
-    has_publish_date: false,
-    publish_date: '',
-    blocker_reason: '',
-  });
+const handleTaskStatusUpdateWithConfirm = async (taskId: number, newStatus: string) => {
+  // Show confirmation dialog only when changing to "blocked" status
+  if (newStatus === 'blocked') {
+    setTaskToBlock({ taskId, newStatus });
+    setShowBlockConfirmDialog(true);
+    return;
+  }
 
+  // For other status changes, proceed directly
+  await handleTaskStatusUpdate(taskId, newStatus);
+};
+
+// Add this function to handle confirmed blocking
+const handleConfirmBlock = async () => {
+  if (!taskToBlock) return;
+  
+  try {
+    const currentTask = tasks.find(task => task.id === taskToBlock.taskId);
+    if (!currentTask) {
+      toast.error('Task not found');
+      return;
+    }
+
+    const backendStatus = getBackendStatus(taskToBlock.newStatus);
+    const assigneeId = currentTask.assignee_id || currentTask.assigned_to;
+
+    // Update local state immediately for better UX
+    const updatedTasks = tasks.map(task =>
+      task.id === taskToBlock.taskId ? { ...task, status: taskToBlock.newStatus } : task
+    );
+    setTasks(updatedTasks);
+
+    await taskApi.update(taskToBlock.taskId, { 
+      title: currentTask.title,
+      description: currentTask.description,
+      priority: currentTask.priority,
+      status: backendStatus,
+      assigned_to: assigneeId,
+      due_date: currentTask.due_date,
+      hasPublishDate: currentTask.has_publish_date, // Add this
+      publishDate: currentTask.publish_date // Add this
+    });
+    
+    toast.success('Task moved to Blocked');
+  } catch (error) {
+    // Revert on error
+    await fetchProjectTasks();
+    if (error instanceof ApiError) {
+      toast.error(`Failed to update task: ${error.message}`);
+    } else {
+      console.error('Task update error:', error);
+      toast.error('Failed to update task status');
+    }
+  } finally {
+    setShowBlockConfirmDialog(false);
+    setTaskToBlock(null);
+  }
+};
   // Dnd-kit sensors
   const sensors = useSensors(
     useSensor(PointerSensor, {
       activationConstraint: {
-        distance: 8,
+        distance: 3,
       },
     }),
     useSensor(KeyboardSensor, {
       coordinateGetter: sortableKeyboardCoordinates,
     })
   );
-
-  useEffect(() => {
-    if (id) {
-      // Simulate API call with delay
-      setTimeout(() => {
-        const foundProject = mockProjects.find(p => p.id === id);
-        if (foundProject) {
-          setProject(foundProject);
-          setTasks(mockTasks);
-        }
-        setIsLoading(false);
-      }, 100);
-    }
-  }, [id]);
 
   useEffect(() => {
     const handleClickOutside = () => {
@@ -1039,6 +953,93 @@ export function ProjectTasks() {
     };
   }, []);
 
+const [newTask, setNewTask] = useState({
+  title: '',
+  description: '',
+  priority: 'medium' as 'low' | 'medium' | 'high',
+  assigned_to: '',
+  due_date: '',
+  status: 'todo' as string,
+  has_publish_date: false, // Add this
+  publish_date: '', // Add this
+});
+
+// Update the editTask state
+const [editTask, setEditTask] = useState({
+  id: 0,
+  title: '',
+  description: '',
+  priority: 'medium' as 'low' | 'medium' | 'high',
+  assigned_to: '',
+  due_date: '',
+  status: 'todo' as string,
+  has_publish_date: false, // Add this
+  publish_date: '', // Add this
+});
+
+  useEffect(() => {
+    if (id) {
+      fetchProjectDetails();
+      fetchProjectTasks();
+    }
+  }, [id]);
+
+  useEffect(() => {
+    if (project) {
+      fetchCompanyUsers();
+    }
+  }, [project]);
+
+  const fetchProjectDetails = async () => {
+    try {
+      const projectData = await projectApi.get(parseInt(id!));
+      setProject(projectData);
+    } catch (error) {
+      if (error instanceof ApiError) {
+        toast.error(`Failed to load project: ${error.message}`);
+      }
+      navigate('/tasks/project-grid');
+    }
+  };
+
+  const fetchProjectTasks = async () => {
+    try {
+      const tasksData = await taskApi.getProjectTasks(parseInt(id!));
+      const mappedTasks = tasksData.map(task => ({
+        ...task,
+        status: getFrontendStatus(task.status)
+      }));
+      console.log('Fetched Tasks:', mappedTasks);
+      setTasks(mappedTasks);
+    } catch (error) {
+      if (error instanceof ApiError) {
+        toast.error(`Failed to load tasks: ${error.message}`);
+      }
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const fetchCompanyUsers = async () => {
+    try {
+      if (project && project.members) {
+        const memberIds = project.members.map(member => member.user_id || member.id);
+        if (memberIds.length > 0) {
+          const users = await employeeApi.list();
+          const projectMembers = users.filter(user => 
+            memberIds.includes(user.id)
+          );
+          setCompanyUsers(projectMembers);
+        } else {
+          setCompanyUsers([]);
+        }
+      }
+    } catch (error) {
+      console.error('Failed to fetch project members:', error);
+      setCompanyUsers([]);
+    }
+  };
+
   const getTasksByStatus = (status: string) => {
     return tasks.filter(task => task.status === status);
   };
@@ -1048,6 +1049,7 @@ export function ProjectTasks() {
     const { active } = event;
     const task = tasks.find(t => t.id === active.id);
     setActiveTask(task || null);
+    document.body.style.cursor = 'grabbing';
   };
 
   const handleDragOver = (event: DragOverEvent) => {
@@ -1058,223 +1060,297 @@ export function ProjectTasks() {
       return;
     }
 
-    const overId = String(over.id);
-    const overColumn = KANBAN_COLUMNS.find(col => col.id === overId);
-    
-    if (overColumn) {
-      setOverColumn(overColumn.id);
-    } else {
-      // Check if over a task and get its column
-      const overTask = tasks.find(t => t.id === over.id);
-      if (overTask) {
-        const taskColumn = KANBAN_COLUMNS.find(col => col.status === overTask.status);
-        setOverColumn(taskColumn?.id || null);
-      } else {
-        setOverColumn(null);
-      }
-    }
+    const overColumnId = KANBAN_COLUMNS.find(col => col.id === over.id)?.id;
+    setOverColumn(overColumnId || null);
   };
 
-  const handleDragEnd = async (event: DragEndEvent) => {
-    const { active, over } = event;
-    
-    setOverColumn(null);
-    
-    if (!over) {
-      setActiveTask(null);
-      return;
-    }
+// Also update the handleDragEnd function
+const handleDragEnd = async (event: DragEndEvent) => {
+  const { active, over } = event;
+  
+  document.body.style.cursor = '';
+  setOverColumn(null);
+  
+  if (!over) {
+    setActiveTask(null);
+    return;
+  }
 
-    const activeTask = tasks.find(task => task.id === active.id);
-    const overId = String(over.id);
+  const activeTask = tasks.find(task => task.id === active.id);
+  const overColumn = KANBAN_COLUMNS.find(col => col.id === over.id);
 
-    // Find the target column
-    let targetColumn = KANBAN_COLUMNS.find(col => col.id === overId);
-    
-    // If dropping on a task, use that task's column
-    if (!targetColumn) {
-      const overTask = tasks.find(t => t.id === over.id);
-      if (overTask) {
-        targetColumn = KANBAN_COLUMNS.find(col => col.status === overTask.status);
-      }
-    }
+  if (!activeTask || !overColumn) {
+    setActiveTask(null);
+    return;
+  }
 
-    if (!activeTask || !targetColumn) {
-      setActiveTask(null);
-      return;
-    }
+  if (activeTask.status === overColumn.status) {
+    setActiveTask(null);
+    return;
+  }
 
-    if (activeTask.status === targetColumn.status) {
-      setActiveTask(null);
-      return;
-    }
+  // Show confirmation dialog when moving to blocked status
+  if (overColumn.status === 'blocked') {
+    setTaskToBlock({ taskId: activeTask.id, newStatus: overColumn.status });
+    setShowBlockConfirmDialog(true);
+    setActiveTask(null);
+    return;
+  }
 
-    // Show confirmation dialog when moving to blocked status
-    if (targetColumn.status === 'blocked') {
-      setTaskToBlock({ taskId: activeTask.id, newStatus: targetColumn.status });
-      setShowBlockConfirmDialog(true);
-      setActiveTask(null);
-      return;
-    }
+  // For other status changes, proceed directly
+  try {
+    const backendStatus = getBackendStatus(overColumn.status);
+    const assigneeId = activeTask.assignee_id || activeTask.assigned_to;
 
-    // For other status changes, proceed directly
     const updatedTasks = tasks.map(task =>
-      task.id === activeTask.id ? { ...task, status: targetColumn.status } : task
+      task.id === activeTask.id ? { ...task, status: overColumn.status } : task
     );
     setTasks(updatedTasks);
 
-    toast.success(`Task moved to ${targetColumn.title}`);
-    setActiveTask(null);
-  };
+    await taskApi.update(activeTask.id, {
+      title: activeTask.title,
+      description: activeTask.description,
+      priority: activeTask.priority,
+      status: backendStatus,
+      assigned_to: assigneeId,
+      due_date: activeTask.due_date,
+      hasPublishDate: activeTask.has_publish_date, // Add this
+      publishDate: activeTask.publish_date // Add this
+    });
 
+    toast.success(`Task moved to ${overColumn.title}`);
+  } catch (error) {
+    await fetchProjectTasks();
+    if (error instanceof ApiError) {
+      toast.error(`Failed to move task: ${error.message}`);
+    } else {
+      console.error('Task move error:', error);
+      toast.error('Failed to move task');
+    }
+  } finally {
+    setActiveTask(null);
+  }
+};
   const handleDragCancel = () => {
+    document.body.style.cursor = '';
     setOverColumn(null);
     setActiveTask(null);
   };
 
-  const handleTaskStatusUpdateWithConfirm = async (taskId: number, newStatus: string) => {
-    if (newStatus === 'blocked') {
-      setTaskToBlock({ taskId, newStatus });
-      setShowBlockConfirmDialog(true);
+ const handleCreateTask = async () => {
+  if (!newTask.title) {
+    toast.error('Please enter task title');
+    return;
+  }
+
+  setIsCreatingTask(true);
+  try {
+    const backendStatus = getBackendStatus(newTask.status);
+    
+    const taskData = {
+      title: newTask.title,
+      description: newTask.description || undefined,
+      priority: newTask.priority,
+      assigned_to: newTask.assigned_to ? parseInt(newTask.assigned_to) : undefined,
+      due_date: newTask.due_date || undefined,
+      status: backendStatus,
+      project_id: parseInt(id!),
+      projectId: parseInt(id!),
+      hasPublishDate: newTask.has_publish_date, // Use correct field name
+      publishDate: newTask.has_publish_date ? newTask.publish_date : undefined, // Use correct field name
+    };
+
+    console.log('Creating task with data:', taskData); // Debug log
+
+    await taskApi.create(taskData);
+    toast.success('Task created successfully');
+    
+    await fetchProjectTasks();
+    
+    setShowCreateTaskDialog(false);
+    setNewTask({
+      title: '',
+      description: '',
+      priority: 'medium',
+      assigned_to: '',
+      due_date: '',
+      status: 'todo',
+      has_publish_date: false,
+      publish_date: ''
+    });
+  } catch (error) {
+    if (error instanceof ApiError) {
+      toast.error(`Failed to create task: ${error.message}`);
+    } else {
+      console.error('Task creation error:', error);
+      toast.error('Failed to create task');
+    }
+  } finally {
+    setIsCreatingTask(false);
+  }
+};
+
+const handleTaskStatusUpdate = async (taskId: number, newStatus: string) => {
+  try {
+    const currentTask = tasks.find(task => task.id === taskId);
+    if (!currentTask) {
+      toast.error('Task not found');
       return;
     }
 
-    await handleTaskStatusUpdate(taskId, newStatus);
-  };
+    const backendStatus = getBackendStatus(newStatus);
+    const assigneeId = currentTask.assignee_id || currentTask.assigned_to;
 
-  const handleConfirmBlock = async () => {
-    if (!taskToBlock || !blockerReason.trim()) {
-      toast.error('Please provide a reason for blocking this task');
-      return;
-    }
-
-    try {
-      const updatedTasks = tasks.map(task =>
-        task.id === taskToBlock.taskId 
-          ? { ...task, status: taskToBlock.newStatus, blocker_reason: blockerReason }
-          : task
-      );
-      setTasks(updatedTasks);
-
-      toast.success('Task moved to Blockers with reason');
-      setShowBlockConfirmDialog(false);
-      setTaskToBlock(null);
-      setBlockerReason('');
-    } catch (error) {
+    await taskApi.update(taskId, { 
+      title: currentTask.title,
+      description: currentTask.description,
+      priority: currentTask.priority,
+      status: backendStatus,
+      assigned_to: assigneeId,
+      due_date: currentTask.due_date,
+      hasPublishDate: currentTask.has_publish_date, // Add this
+      publishDate: currentTask.publish_date // Add this
+    });
+    
+    await fetchProjectTasks();
+    toast.success('Task status updated');
+  } catch (error) {
+    if (error instanceof ApiError) {
+      toast.error(`Failed to update task: ${error.message}`);
+    } else {
+      console.error('Task update error:', error);
       toast.error('Failed to update task status');
     }
-  };
-
-  const handleTaskStatusUpdate = async (taskId: number, newStatus: string) => {
-    const updatedTasks = tasks.map(task =>
-      task.id === taskId ? { ...task, status: newStatus as any } : task
-    );
-    setTasks(updatedTasks);
-    toast.success('Task status updated');
-  };
+  }
+};
 
   const handleTaskClick = (task: ProjectTask) => {
     setSelectedTask(task);
     setShowTaskDetailDialog(true);
   };
 
-  const handleEditTask = (task: ProjectTask) => {
-    setSelectedTask(task);
-    setEditTask({
-      id: task.id,
-      title: task.title,
-      description: task.description,
-      priority: task.priority,
-      assignee: task.assigneeId.toString(),
-      due_date: task.due_date,
-      status: task.status,
-      has_publish_date: task.has_publish_date,
-      publish_date: task.publish_date,
-      blocker_reason: task.blocker_reason || ''
-    });
-    setShowTaskDetailDialog(false);
-    setShowEditTaskDialog(true);
-  };
+const handleEditTask = (task: ProjectTask) => {
+  setSelectedTask(task);
+  
+  const formattedDueDate = task.due_date 
+    ? new Date(task.due_date).toISOString().split('T')[0]
+    : '';
 
-  const handleCreateTask = () => {
-    if (!newTask.title) {
-      toast.error('Please enter task title');
-      return;
+  const formattedPublishDate = task.publish_date 
+    ? new Date(task.publish_date).toISOString().split('T')[0]
+    : '';
+
+  const assigneeId = task.assignee_id || task.assigned_to;
+
+  setEditTask({
+    id: task.id,
+    title: task.title,
+    description: task.description || '',
+    priority: task.priority as 'low' | 'medium' | 'high',
+    assigned_to: assigneeId?.toString() || '',
+    due_date: formattedDueDate,
+    status: task.status,
+    has_publish_date: task.has_publish_date || false, // Add this
+    publish_date: formattedPublishDate // Add this
+  });
+  
+  setShowTaskDetailDialog(false);
+  setShowEditTaskDialog(true);
+};
+const handleUpdateTask = async () => {
+  if (!editTask.title) {
+    toast.error('Please enter task title');
+    return;
+  }
+
+  setIsUpdatingTask(true);
+  try {
+    const backendStatus = getBackendStatus(editTask.status);
+    
+    let dueDateValue = editTask.due_date;
+    if (dueDateValue) {
+      const localDate = new Date(dueDateValue + 'T00:00:00');
+      dueDateValue = localDate.toISOString().split('T')[0];
     }
 
-    const newTaskObj: ProjectTask = {
-      id: Math.max(...tasks.map(t => t.id)) + 1,
-      title: newTask.title,
-      description: newTask.description,
-      priority: newTask.priority,
-      status: newTask.status as any,
-      assignee: project?.members.find(m => m.id === parseInt(newTask.assignee))?.name || 'Unassigned',
-      assigneeId: parseInt(newTask.assignee),
-      assigned_by: 'John Doe', // Default assigned by
-      assigned_by_id: 1,
-      due_date: newTask.due_date,
-      has_publish_date: newTask.has_publish_date,
-      publish_date: newTask.publish_date,
-      created_at: new Date().toISOString().split('T')[0]
+    let publishDateValue = editTask.publish_date;
+    if (publishDateValue && editTask.has_publish_date) {
+      const localDate = new Date(publishDateValue + 'T00:00:00');
+      publishDateValue = localDate.toISOString().split('T')[0];
+    }
+
+    const taskData = {
+      title: editTask.title,
+      description: editTask.description || undefined,
+      priority: editTask.priority,
+      assigned_to: editTask.assigned_to && editTask.assigned_to !== "unassigned" ? parseInt(editTask.assigned_to) : undefined,
+      due_date: dueDateValue || undefined,
+      status: backendStatus,
+      hasPublishDate: editTask.has_publish_date, // Use correct field name
+      publishDate: editTask.has_publish_date ? publishDateValue : undefined, // Use correct field name
     };
 
-    setTasks(prev => [...prev, newTaskObj]);
-    toast.success('Task created successfully');
-    setShowCreateTaskDialog(false);
-    setNewTask({
+    console.log('Updating task with data:', taskData); // Debug log
+
+    await taskApi.update(editTask.id, taskData);
+    toast.success('Task updated successfully');
+    
+    await fetchProjectTasks();
+    
+    setShowEditTaskDialog(false);
+    setEditTask({
+      id: 0,
       title: '',
       description: '',
       priority: 'medium',
-      assignee: '',
+      assigned_to: '',
       due_date: '',
       status: 'todo',
       has_publish_date: false,
-      publish_date: '',
+      publish_date: ''
     });
-  };
-
-  const handleUpdateTask = () => {
-    if (!editTask.title) {
-      toast.error('Please enter task title');
-      return;
+  } catch (error) {
+    if (error instanceof ApiError) {
+      toast.error(`Failed to update task: ${error.message}`);
+    } else {
+      console.error('Task update error:', error);
+      toast.error('Failed to update task');
     }
-
-    const updatedTasks = tasks.map(task =>
-      task.id === editTask.id
-        ? {
-            ...task,
-            title: editTask.title,
-            description: editTask.description,
-            priority: editTask.priority,
-            status: editTask.status as any,
-            assignee: project?.members.find(m => m.id === parseInt(editTask.assignee))?.name || 'Unassigned',
-            assigneeId: parseInt(editTask.assignee),
-            due_date: editTask.due_date,
-            has_publish_date: editTask.has_publish_date,
-            publish_date: editTask.publish_date,
-            blocker_reason: editTask.blocker_reason
-          }
-        : task
-    );
-
-    setTasks(updatedTasks);
-    toast.success('Task updated successfully');
-    setShowEditTaskDialog(false);
-  };
-
-  const handleDeleteTask = () => {
-    if (!taskToDelete) return;
-
-    setTasks(prev => prev.filter(task => task.id !== taskToDelete.id));
-    toast.success('Task deleted successfully');
-    setShowDeleteConfirmDialog(false);
-    setTaskToDelete(null);
-  };
+  } finally {
+    setIsUpdatingTask(false);
+  }
+};
 
   const handleDeleteClick = (task: ProjectTask) => {
     setTaskToDelete(task);
     setShowDeleteConfirmDialog(true);
     setDropdownOpen(null);
+  };
+
+  const handleDeleteTask = async () => {
+    if (!taskToDelete) return;
+
+    try {
+      await taskApi.delete(taskToDelete.id);
+      toast.success('Task deleted successfully');
+      setTasks(prev => prev.filter(task => task.id !== taskToDelete.id));
+      setShowDeleteConfirmDialog(false);
+      setTaskToDelete(null);
+    } catch (error) {
+      if (error instanceof ApiError) {
+        toast.error(`Failed to delete task: ${error.message}`);
+      } else {
+        console.error('Task deletion error:', error);
+        toast.error('Failed to delete task');
+      }
+      await fetchProjectTasks();
+    }
+  };
+
+  const handleViewTask = (task: ProjectTask) => {
+    setSelectedTask(task);
+    setShowEditTaskDialog(false);
+    setShowTaskDetailDialog(true);
   };
 
   const handleAddTask = (status: string) => {
@@ -1290,13 +1366,35 @@ export function ProjectTasks() {
     };
     return (
       <Badge className={`text-xs transition-all duration-200 ${variants[priority as keyof typeof variants]}`}>
-        {priority.charAt(0).toUpperCase() + priority.slice(1)}
+        {capitalize(priority)}
       </Badge>
     );
   };
 
+  const getPriorityIcon = (priority: string) => {
+    switch (priority) {
+      case 'high':
+        return <AlertCircle className="w-4 h-4 text-red-500" />;
+      case 'medium':
+        return <Target className="w-4 h-4 text-yellow-500" />;
+      case 'low':
+        return <Target className="w-4 h-4 text-green-500" />;
+      default:
+        return <Target className="w-4 h-4 text-gray-500" />;
+    }
+  };
+
+  const getStatusDisplayName = (status: string) => {
+    const column = KANBAN_COLUMNS.find(col => col.status === status);
+    return column ? column.title : status;
+  };
+
   if (isLoading) {
-    return <LoadingSpinner />;
+    return (
+      <div className="p-6 flex justify-center">
+        <p>Loading project details...</p>
+      </div>
+    );
   }
 
   if (!project) {
@@ -1312,7 +1410,7 @@ export function ProjectTasks() {
       {/* Header */}
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-4">
-          <Button variant="outline" size="icon" onClick={() => navigate('/project-grid')}>
+          <Button variant="outline" size="icon" onClick={() => navigate('/tasks/project-grid')}>
             <ArrowLeft className="w-4 h-4" />
           </Button>
           <div>
@@ -1321,6 +1419,7 @@ export function ProjectTasks() {
           </div>
         </div>
         <div className="flex items-center gap-3">
+       
           <Button className="gap-2 transition-all hover:scale-105" onClick={() => setShowCreateTaskDialog(true)}>
             <Plus className="w-4 h-4" />
             New Task
@@ -1365,379 +1464,177 @@ export function ProjectTasks() {
           </div>
         </CardContent>
       </Card>
+      
 
-      {/* View Toggle */}
-      <div className="w-80 border rounded-lg p-1 bg-white">
-        <div className="flex">
-          <button
-            className={`flex-1 cursor-pointer flex items-center justify-center gap-2 py-1.5 px-3 text-sm font-medium rounded-md transition-all duration-200 ${
-              activeView === 'kanban' 
-                ? 'bg-primary text-white shadow-sm' 
-                : 'text-gray-600 hover:text-gray-900 hover:bg-gray-100'
-            }`}
-            onClick={() => setActiveView('kanban')}
-          >
-            <Kanban className="w-4 h-4" />
-            Column View
-          </button>
-          <button
-            className={`flex-1 flex cursor-pointer items-center justify-center gap-2 py-1.5 px-3 text-sm font-medium rounded-md transition-all duration-200 ${
-              activeView === 'list' 
-                ? 'bg-primary text-white shadow-sm' 
-                : 'text-gray-600 hover:text-gray-900 hover:bg-gray-100'
-            }`}
-            onClick={() => setActiveView('list')}
-          >
-            <List className="w-4 h-4" />
-            List View
-          </button>
-        </div>
-      </div>
-
-      {/* Status Tabs for List View */}
-      {activeView === 'list' && (
-        <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-          <TabsList className="grid w-full grid-cols-5">
-            {TAB_STATUS_OPTIONS.map((tab) => (
-              <TabsTrigger 
-                key={tab.id} 
-                value={tab.status}
-                className="flex items-center gap-2 transition-all duration-200"
-              >
-                {tab.title}
-                <Badge variant="secondary" className="text-xs">
-                  {tab.status === 'all' ? tasks.length : tasks.filter(t => t.status === tab.status).length}
-                </Badge>
-              </TabsTrigger>
-            ))}
-          </TabsList>
-          
-          <TabsContent value={activeTab} className="mt-6">
-            <ListView
-              tasks={tasks}
-              activeTab={activeTab}
-              onTaskClick={handleTaskClick}
-              onEditTask={handleEditTask}
-              onDeleteClick={handleDeleteClick}
-              onStatusChange={handleTaskStatusUpdateWithConfirm}
-              getPriorityBadge={getPriorityBadge}
-              dropdownOpen={dropdownOpen}
-              setDropdownOpen={setDropdownOpen}
-            />
-          </TabsContent>
-        </Tabs>
-      )}
-
-      {/* Kanban View */}
-      {activeView === 'kanban' && (
-        <DndContext
-          sensors={sensors}
-          collisionDetection={closestCenter}
-          onDragStart={handleDragStart}
-          onDragOver={handleDragOver}
-          onDragEnd={handleDragEnd}
-          onDragCancel={handleDragCancel}
+   <div className="w-80 border rounded-lg p-1 bg-white">
+      <div className="flex">
+        <button
+          className={`flex-1 flex items-center cursor-pointer justify-center gap-2 py-1.5 px-3 text-sm font-medium rounded-md transition-all duration-200 ${
+            activeView === 'kanban' 
+              ? 'bg-black text-white shadow-sm' 
+              : 'text-gray-600 hover:text-gray-900 hover:bg-gray-100'
+          }`}
+          onClick={() => setActiveView('kanban')}
         >
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
-            {KANBAN_COLUMNS.map(column => {
-              const columnTasks = getTasksByStatus(column.status);
-              const isColumnOver = overColumn === column.id;
-              
-              return (
-                <SortableColumn
-                  key={column.id}
-                  column={column}
-                  tasks={columnTasks}
-                  onTaskClick={handleTaskClick}
-                  onEditTask={handleEditTask}
-                  onDeleteClick={handleDeleteClick}
-                  onStatusChange={handleTaskStatusUpdateWithConfirm}
-                  getPriorityBadge={getPriorityBadge}
-                  dropdownOpen={dropdownOpen}
-                  setDropdownOpen={setDropdownOpen}
-                  onAddTask={handleAddTask}
-                  isOver={isColumnOver}
-                />
-              );
-            })}
-          </div>
-
-          <DragOverlay dropAnimation={dropAnimationConfig}>
-            {activeTask ? (
-              <TaskCardOverlay 
-                task={activeTask} 
-                getPriorityBadge={getPriorityBadge} 
-              />
-            ) : null}
-          </DragOverlay>
-        </DndContext>
-      )}
-
-      {/* Task Detail Dialog */}
-      <Dialog open={showTaskDetailDialog} onOpenChange={setShowTaskDetailDialog}>
-        <DialogContent className="max-w-6xl" style={{ maxWidth: '90vw' ,width: '60vw'}}>
-          {selectedTask && (
-            <>
-              <DialogHeader>
-                <DialogTitle className="flex items-center gap-2">
-                  {selectedTask.title}
-                </DialogTitle>
-                <DialogDescription>
-                  Complete task details and project information
-                </DialogDescription>
-              </DialogHeader>
-
-              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                {/* Left Column - Project Information */}
-                <div className="space-y-4">
-                  <div className="flex items-center gap-2">
-                    <FolderKanban className="w-5 h-5 text-blue-500" />
-                    <h3 className="text-lg font-semibold">Project Information</h3>
-                  </div>
-                  
-                  <Card>
-                    <CardContent className="p-4 space-y-4">
-                      <div className="space-y-3">
-                        <div className="flex justify-between items-center">
-                          <span className="text-sm font-medium text-gray-500">Project Name</span>
-                          <span className="font-semibold text-right">{project.name}</span>
-                        </div>
-                        
-                        <div className="flex justify-between items-center">
-                          <span className="text-sm font-medium text-gray-500">Client</span>
-                          <span className="text-right">{project.client}</span>
-                        </div>
-                        
-                        <div className="flex justify-between items-center">
-                          <span className="text-sm font-medium text-gray-500">Project Status</span>
-                          <Badge variant={project.status === 'active' ? 'default' : 'secondary'}>
-                            {project.status}
-                          </Badge>
-                        </div>
-                        
-                        <div className="flex justify-between items-center">
-                          <span className="text-sm font-medium text-gray-500">Project Manager</span>
-                          <span className="text-right">{project.manager}</span>
-                        </div>
-                        
-                        <div className="flex justify-between items-center">
-                          <span className="text-sm font-medium text-gray-500">Team Size</span>
-                          <span className="text-right">{project.members?.length || 0} members</span>
-                        </div>
-                        
-                        <div className="flex justify-between items-center">
-                          <span className="text-sm font-medium text-gray-500">Start Date</span>
-                          <span className="text-right">{new Date(project.start_date).toLocaleDateString()}</span>
-                        </div>
-                        
-                        <div className="flex justify-between items-center">
-                          <span className="text-sm font-medium text-gray-500">End Date</span>
-                          <span className="text-right">{new Date(project.end_date).toLocaleDateString()}</span>
-                        </div>
-                      </div>
-                    </CardContent>
-                  </Card>
-                </div>
-
-                {/* Right Column - Task Information */}
-                <div className="space-y-4">
-                  <div className="flex items-center gap-2">
-                    <Target className="w-5 h-5 text-purple-500" />
-                    <h3 className="text-lg font-semibold">Task Information</h3>
-                  </div>
-                  
-                  <Card>
-                    <CardContent className="p-4 space-y-4">
-                      {/* Description */}
-                      <div>
-                        <Label className="text-sm font-medium text-gray-500">Description</Label>
-                        <p className="mt-1 text-sm">
-                          {selectedTask.description || 'No description provided'}
-                        </p>
-                      </div>
-
-                      {/* Priority and Status */}
-                      <div className="grid grid-cols-2 gap-4">
-                        <div>
-                          <Label className="text-sm font-medium text-gray-500">Priority</Label>
-                          <div className="mt-1">
-                            {getPriorityBadge(selectedTask.priority)}
-                          </div>
-                        </div>
-                        <div>
-                          <Label className="text-sm font-medium text-gray-500">Status</Label>
-                          <div className="mt-1">
-                            <Badge variant="outline">
-                              {KANBAN_COLUMNS.find(col => col.status === selectedTask.status)?.title}
-                            </Badge>
-                          </div>
-                        </div>
-                      </div>
-
-                      {/* Assignment Information */}
-                      <div className="grid grid-cols-2 gap-4">
-                        <div>
-                          <Label className="text-sm font-medium text-gray-500">Assigned To</Label>
-                          <div className="flex items-center gap-2 mt-1">
-                            <User className="w-4 h-4 text-gray-400" />
-                            <span className="text-sm">{selectedTask.assignee}</span>
-                          </div>
-                        </div>
-                        <div>
-                          <Label className="text-sm font-medium text-gray-500">Assigned By</Label>
-                          <div className="flex items-center gap-2 mt-1">
-                            <User className="w-4 h-4 text-blue-400" />
-                            <span className="text-sm text-blue-600">{selectedTask.assigned_by}</span>
-                          </div>
-                        </div>
-                      </div>
-
-                      {/* Dates Information */}
-                      <div className="space-y-3">
-                        <Label className="text-sm font-medium text-gray-500">Dates</Label>
-                        <div className="grid grid-cols-2 gap-4">
-                          {selectedTask.has_publish_date && selectedTask.publish_date && (
-                            <div className="flex items-center gap-2">
-                              <Calendar className="w-4 h-4 text-purple-400" />
-                              <div>
-                                <p className="text-xs text-gray-500">Publish Date</p>
-                                <p className="text-sm text-purple-600">
-                                  {new Date(selectedTask.publish_date).toLocaleDateString()}
-                                </p>
-                              </div>
-                            </div>
-                          )}
-                          <div className="flex items-center gap-2">
-                            <Calendar className="w-4 h-4 text-gray-400" />
-                            <div>
-                              <p className="text-xs text-gray-500">Due Date</p>
-                              <p className="text-sm">
-                                {selectedTask.due_date 
-                                  ? new Date(selectedTask.due_date).toLocaleDateString()
-                                  : 'No due date'
-                                }
-                              </p>
-                            </div>
-                          </div>
-                          <div className="flex items-center gap-2">
-                            <Calendar className="w-4 h-4 text-gray-400" />
-                            <div>
-                              <p className="text-xs text-gray-500">Created Date</p>
-                              <p className="text-sm">
-                                {new Date(selectedTask.created_at).toLocaleDateString()}
-                              </p>
-                            </div>
-                          </div>
-                        </div>
-                      </div>
-
-                      {/* Blocker Reason */}
-                      {selectedTask.status === 'blocked' && selectedTask.blocker_reason && (
-                        <div>
-                          <Label className="text-sm font-medium text-gray-500">Blocking Reason</Label>
-                          <div className="mt-1 p-3 bg-red-50 border border-red-200 rounded-lg">
-                            <div className="flex items-start gap-2">
-                              <AlertCircle className="w-4 h-4 text-red-500 mt-0.5 flex-shrink-0" />
-                              <p className="text-sm text-red-700">{selectedTask.blocker_reason}</p>
-                            </div>
-                          </div>
-                        </div>
-                      )}
-                    </CardContent>
-                  </Card>
-
-                  {/* Task Actions */}
-                  <div className="flex gap-2 pt-2">
-                    <Button 
-                      variant="outline" 
-                      className="flex-1"
-                      onClick={() => setShowTaskDetailDialog(false)}
-                    >
-                      Close
-                    </Button>
-                    <Button 
-                      className="flex-1"
-                      onClick={() => {
-                        setShowTaskDetailDialog(false);
-                        handleEditTask(selectedTask);
-                      }}
-                    >
-                      <Edit className="w-4 h-4 mr-2" />
-                      Edit Task
-                    </Button>
-                  </div>
-                </div>
-              </div>
-            </>
-          )}
-        </DialogContent>
-      </Dialog>
-
-      {/* Block Confirmation Dialog */}
-      <Dialog open={showBlockConfirmDialog} onOpenChange={setShowBlockConfirmDialog}>
-        <DialogContent className="max-w-md">
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2 text-amber-600">
-              <AlertCircle className="w-5 h-5" />
-              Confirm Move to Blockers
-            </DialogTitle>
-            <DialogDescription>
-              Please provide a reason why this task is being blocked. This will help team members understand the issue.
-            </DialogDescription>
-          </DialogHeader>
-
-          <div className="py-4 space-y-4">
-            {taskToBlock && (
-              <div className="bg-amber-50 border border-amber-200 rounded-lg p-4">
-                <p className="font-medium text-amber-800">
-                  {tasks.find(task => task.id === taskToBlock.taskId)?.title || 'Task'} will be moved to Blockers
-                </p>
-              </div>
-            )}
+          <Kanban className="w-4 h-4" />
+          Column View
+        </button>
+        <button
+          className={`flex-1 flex items-center justify-center cursor-pointer gap-2 py-1.5 px-3 text-sm font-medium rounded-md transition-all duration-200 ${
+            activeView === 'list' 
+              ? 'bg-black text-white shadow-sm' 
+              : 'text-gray-600 hover:text-gray-900 hover:bg-gray-100'
+          }`}
+          onClick={() => setActiveView('list')}
+        >
+          <List className="w-4 h-4" />
+          List View
+        </button>
+      </div>
+    </div>
+           
+    {/* View Content */}
+    {activeView === 'kanban' ? (
+      /* Kanban Board with Dnd-kit */
+      <DndContext
+        sensors={sensors}
+        collisionDetection={closestCenter}
+        onDragStart={handleDragStart}
+        onDragOver={handleDragOver}
+        onDragEnd={handleDragEnd}
+        onDragCancel={handleDragCancel}
+      >
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
+          {KANBAN_COLUMNS.map(column => {
+            const columnTasks = getTasksByStatus(column.status);
+            const isColumnOver = overColumn === column.id;
             
-            <div className="space-y-2">
-              <Label htmlFor="blocker-reason">Blocking Reason *</Label>
-              <Textarea
-                id="blocker-reason"
-                placeholder="Describe what's blocking this task (e.g., Waiting for API credentials, Design approval pending, etc.)"
-                value={blockerReason}
-                onChange={(e) => setBlockerReason(e.target.value)}
-                rows={3}
+            return (
+              <SortableColumn
+                key={column.id}
+                column={column}
+                tasks={columnTasks}
+                onTaskClick={handleTaskClick}
+                onEditTask={handleEditTask}
+                onDeleteClick={handleDeleteClick}
+                onStatusChange={handleTaskStatusUpdateWithConfirm} // Updated to use new function
+                getPriorityBadge={getPriorityBadge}
+                companyUsers={companyUsers}
+                dropdownOpen={dropdownOpen}
+                setDropdownOpen={setDropdownOpen}
+                onAddTask={handleAddTask}
+                isOver={isColumnOver}
               />
-              <p className="text-xs text-gray-500">This reason will be visible to all team members.</p>
-            </div>
-          </div>
+            );
+          })}
+        </div>
 
-          <DialogFooter>
-            <Button 
-              variant="outline" 
-              onClick={() => {
-                setShowBlockConfirmDialog(false);
-                setTaskToBlock(null);
-                setBlockerReason('');
-              }}
-            >
-              Cancel
-            </Button>
-            <Button 
-              variant="default" 
-              onClick={handleConfirmBlock}
-              disabled={!blockerReason.trim()}
-              className="bg-amber-600 hover:bg-amber-700"
-            >
-              <AlertCircle className="w-4 h-4 mr-2" />
-              Move to Blockers
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+        <DragOverlay dropAnimation={dropAnimationConfig}>
+          {activeTask ? (
+            <TaskCardOverlay 
+              task={activeTask} 
+              getPriorityBadge={getPriorityBadge} 
+            />
+          ) : null}
+        </DragOverlay>
+      </DndContext>
+    ) : (
+      /* List/Tab View */
+      <Card>
+        <CardContent className="p-6">
+          <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
+            <TabsList className="grid w-full grid-cols-5">
+              {TAB_STATUS_OPTIONS.map(option => (
+                <TabsTrigger 
+                  key={option.id} 
+                  value={option.id}
+                  className="flex items-center gap-2"
+                >
+                  {option.title}
+                  <Badge variant="secondary" className="ml-1">
+                    {option.id === 'all' ? tasks.length : getTasksByStatus(option.status).length}
+                  </Badge>
+                </TabsTrigger>
+              ))}
+            </TabsList>
+            
+            <TabsContent value={activeTab} className="space-y-4">
+              <TabView
+                tasks={tasks}
+                onTaskClick={handleTaskClick}
+                onEditTask={handleEditTask}
+                onDeleteClick={handleDeleteClick}
+                onStatusChange={handleTaskStatusUpdateWithConfirm} // Updated to use new function
+                getPriorityBadge={getPriorityBadge}
+                companyUsers={companyUsers}
+                dropdownOpen={dropdownOpen}
+                setDropdownOpen={setDropdownOpen}
+                activeTab={activeTab}
+              />
+            </TabsContent>
+          </Tabs>
+        </CardContent>
+      </Card>
+    )}
 
+    {/* Block Confirmation Dialog */}
+
+<Dialog open={showBlockConfirmDialog} onOpenChange={setShowBlockConfirmDialog}>
+  <DialogContent className="max-w-md">
+    <DialogHeader>
+      <DialogTitle className="flex items-center gap-2 text-amber-600">
+        <AlertCircle className="w-5 h-5" />
+        Confirm Block Task
+      </DialogTitle>
+      <DialogDescription>
+        Are you sure you want to block this task? This indicates there are issues preventing progress.
+      </DialogDescription>
+    </DialogHeader>
+
+    <div className="py-4">
+      {taskToBlock && (
+        <div className="bg-amber-50 border border-amber-200 rounded-lg p-4">
+          <p className="font-medium text-amber-800">
+            {tasks.find(task => task.id === taskToBlock.taskId)?.title || 'Task'} will be moved to Blocked status
+          </p>
+          <p className="text-sm text-amber-600 mt-2">
+            Consider adding a comment explaining what's blocking this task.
+          </p>
+        </div>
+      )}
+    </div>
+
+    <DialogFooter>
+      <Button 
+        variant="outline" 
+        onClick={() => {
+          setShowBlockConfirmDialog(false);
+          setTaskToBlock(null);
+        }}
+      >
+        Cancel
+      </Button>
+      <Button 
+        variant="default" 
+        onClick={handleConfirmBlock}
+        className="bg-amber-600 hover:bg-amber-700"
+      >
+        <AlertCircle className="w-4 h-4 mr-2" />
+        Block Task
+      </Button>
+    </DialogFooter>
+  </DialogContent>
+</Dialog>
+
+    {/* Add Task Dialog */}
       {/* Create Task Dialog */}
       <Dialog open={showCreateTaskDialog} onOpenChange={setShowCreateTaskDialog}>
         <DialogContent className="max-w-2xl">
           <DialogHeader>
             <DialogTitle>Create New Task</DialogTitle>
-            <DialogDescription>Add a new task to this project</DialogDescription>
+            <DialogDescription>
+              Add a new task to this project
+            </DialogDescription>
           </DialogHeader>
 
           <div className="space-y-4">
@@ -1748,7 +1645,7 @@ export function ProjectTasks() {
                 placeholder="e.g., Design user authentication flow"
                 value={newTask.title}
                 onChange={(e) => setNewTask({ ...newTask, title: e.target.value })}
-                className="transition-all focus:ring-2 focus:ring-blue-600 "
+                className="mt-1 transition-all focus:ring-2 focus:ring-blue-500"
               />
             </div>
 
@@ -1759,7 +1656,7 @@ export function ProjectTasks() {
                 placeholder="Task description and requirements..."
                 value={newTask.description}
                 onChange={(e) => setNewTask({ ...newTask, description: e.target.value })}
-                className="transition-all focus:ring-2 focus:ring-blue-500"
+                className="mt-1 transition-all focus:ring-2 focus:ring-blue-500"
                 rows={3}
               />
             </div>
@@ -1773,7 +1670,7 @@ export function ProjectTasks() {
                     setNewTask({ ...newTask, priority: value })
                   }
                 >
-                  <SelectTrigger id="task-priority" className="transition-all">
+                  <SelectTrigger id="task-priority" className="mt-1 transition-all">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
@@ -1790,7 +1687,7 @@ export function ProjectTasks() {
                   value={newTask.status}
                   onValueChange={(value) => setNewTask({ ...newTask, status: value })}
                 >
-                  <SelectTrigger id="task-status" className="transition-all">
+                  <SelectTrigger id="task-status" className="mt-1 transition-all">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
@@ -1808,14 +1705,14 @@ export function ProjectTasks() {
               <div>
                 <Label htmlFor="task-assignee">Assign To</Label>
                 <Select
-                  value={newTask.assignee}
-                  onValueChange={(value) => setNewTask({ ...newTask, assignee: value })}
+                  value={newTask.assigned_to}
+                  onValueChange={(value) => setNewTask({ ...newTask, assigned_to: value })}
                 >
-                  <SelectTrigger id="task-assignee" className="transition-all">
+                  <SelectTrigger id="task-assignee" className="mt-1 transition-all">
                     <SelectValue placeholder="Select assignee" />
                   </SelectTrigger>
                   <SelectContent>
-                    {project.members.map((user) => (
+                    {companyUsers.map((user) => (
                       <SelectItem key={user.id} value={user.id.toString()}>
                         {user.name} ({user.role})
                       </SelectItem>
@@ -1831,47 +1728,45 @@ export function ProjectTasks() {
                   type="date"
                   value={newTask.due_date}
                   onChange={(e) => setNewTask({ ...newTask, due_date: e.target.value })}
-                  className="transition-all focus:ring-2 focus:ring-blue-500"
+                  className="mt-1 transition-all focus:ring-2 focus:ring-blue-500"
                 />
               </div>
-            </div>
-
-            {/* Publish Date Section */}
-            <div className="space-y-3">
-              <div className="flex items-center gap-3">
-                <input
-                  type="checkbox"
-                  id="task-has-publish-date"
-                  checked={newTask.has_publish_date}
-                  onChange={(e) => setNewTask({ ...newTask, has_publish_date: e.target.checked })}
-                  className="w-4 h-4 text-blue-600 bg-gray-100 border-gray-300 rounded focus:ring-blue-500"
-                />
-                <Label htmlFor="task-has-publish-date" className="cursor-pointer">
-                  Set Publish Date
-                </Label>
-              </div>
-
-              {newTask.has_publish_date && (
-                <div>
-                  <Label htmlFor="task-publish-date">Publish Date</Label>
-                  <Input
-                    id="task-publish-date"
-                    type="date"
-                    value={newTask.publish_date}
-                    onChange={(e) => setNewTask({ ...newTask, publish_date: e.target.value })}
-                    className="transition-all focus:ring-2 focus:ring-blue-500"
-                  />
-                </div>
-              )}
             </div>
           </div>
+{/* Add this section to the Create Task Dialog */}
+<div className="space-y-3">
+  <div className="flex items-center gap-3">
+    <input
+      type="checkbox"
+      id="task-has-publish-date"
+      checked={newTask.has_publish_date}
+      onChange={(e) => setNewTask({ ...newTask, has_publish_date: e.target.checked })}
+      className="w-4 h-4 text-blue-600 bg-gray-100 border-gray-300 rounded focus:ring-blue-500"
+    />
+    <Label htmlFor="task-has-publish-date" className="cursor-pointer">
+      Set Publish Date
+    </Label>
+  </div>
 
+  {newTask.has_publish_date && (
+    <div>
+      <Label htmlFor="task-publish-date">Publish Date</Label>
+      <Input
+        id="task-publish-date"
+        type="date"
+        value={newTask.publish_date}
+        onChange={(e) => setNewTask({ ...newTask, publish_date: e.target.value })}
+        className="mt-1 transition-all focus:ring-2 focus:ring-blue-500"
+      />
+    </div>
+  )}
+</div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setShowCreateTaskDialog(false)}>
+            <Button variant="outline" onClick={() => setShowCreateTaskDialog(false)} disabled={isCreatingTask}>
               Cancel
             </Button>
-            <Button onClick={handleCreateTask}>
-              Create Task
+            <Button onClick={handleCreateTask} disabled={isCreatingTask}>
+              {isCreatingTask ? 'Creating...' : 'Create Task'}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -1882,7 +1777,9 @@ export function ProjectTasks() {
         <DialogContent className="max-w-2xl">
           <DialogHeader>
             <DialogTitle>Edit Task</DialogTitle>
-            <DialogDescription>Update task details</DialogDescription>
+            <DialogDescription>
+              Update task details
+            </DialogDescription>
           </DialogHeader>
 
           <div className="space-y-4">
@@ -1890,9 +1787,10 @@ export function ProjectTasks() {
               <Label htmlFor="edit-task-title">Task Title *</Label>
               <Input
                 id="edit-task-title"
+                placeholder="e.g., Design user authentication flow"
                 value={editTask.title}
                 onChange={(e) => setEditTask({ ...editTask, title: e.target.value })}
-                className="transition-all focus:ring-2 focus:ring-blue-500"
+                className="mt-1 transition-all focus:ring-2 focus:ring-blue-500"
               />
             </div>
 
@@ -1900,9 +1798,10 @@ export function ProjectTasks() {
               <Label htmlFor="edit-task-description">Description</Label>
               <Textarea
                 id="edit-task-description"
+                placeholder="Task description and requirements..."
                 value={editTask.description}
                 onChange={(e) => setEditTask({ ...editTask, description: e.target.value })}
-                className="transition-all focus:ring-2 focus:ring-blue-500"
+                className="mt-1 transition-all focus:ring-2 focus:ring-blue-500"
                 rows={3}
               />
             </div>
@@ -1916,7 +1815,7 @@ export function ProjectTasks() {
                     setEditTask({ ...editTask, priority: value })
                   }
                 >
-                  <SelectTrigger id="edit-task-priority" className="transition-all">
+                  <SelectTrigger id="edit-task-priority" className="mt-1 transition-all">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
@@ -1933,7 +1832,7 @@ export function ProjectTasks() {
                   value={editTask.status}
                   onValueChange={(value) => setEditTask({ ...editTask, status: value })}
                 >
-                  <SelectTrigger id="edit-task-status" className="transition-all">
+                  <SelectTrigger id="edit-task-status" className="mt-1 transition-all">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
@@ -1951,20 +1850,32 @@ export function ProjectTasks() {
               <div>
                 <Label htmlFor="edit-task-assignee">Assign To</Label>
                 <Select
-                  value={editTask.assignee}
-                  onValueChange={(value) => setEditTask({ ...editTask, assignee: value })}
+                  value={editTask.assigned_to || "unassigned"}
+                  onValueChange={(value) => {
+                    setEditTask({ ...editTask, assigned_to: value === "unassigned" ? "" : value });
+                    console.log('Selected assignee value:', value);
+                  }}
                 >
-                  <SelectTrigger id="edit-task-assignee" className="transition-all">
-                    <SelectValue />
+                  <SelectTrigger id="edit-task-assignee" className="mt-1 transition-all">
+                    <SelectValue>
+                      {editTask.assigned_to 
+                        ? companyUsers.find(user => user.id.toString() === editTask.assigned_to)?.name || 'Select assignee'
+                        : 'Unassigned'
+                      }
+                    </SelectValue>
                   </SelectTrigger>
                   <SelectContent>
-                    {project.members.map((user) => (
+                    <SelectItem value="unassigned">Unassigned</SelectItem>
+                    {companyUsers.map((user) => (
                       <SelectItem key={user.id} value={user.id.toString()}>
                         {user.name} ({user.role})
                       </SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
+                {!editTask.assigned_to && (
+                  <p className="text-xs text-gray-500 mt-1">Currently unassigned</p>
+                )}
               </div>
 
               <div>
@@ -1974,64 +1885,187 @@ export function ProjectTasks() {
                   type="date"
                   value={editTask.due_date}
                   onChange={(e) => setEditTask({ ...editTask, due_date: e.target.value })}
-                  className="transition-all focus:ring-2 focus:ring-blue-500"
+                  className="mt-1 transition-all focus:ring-2 focus:ring-blue-500"
                 />
               </div>
             </div>
-
-            {/* Publish Date Section */}
-            <div className="space-y-3">
-              <div className="flex items-center gap-3">
-                <input
-                  type="checkbox"
-                  id="edit-task-has-publish-date"
-                  checked={editTask.has_publish_date}
-                  onChange={(e) => setEditTask({ ...editTask, has_publish_date: e.target.checked })}
-                  className="w-4 h-4 text-blue-600 bg-gray-100 border-gray-300 rounded focus:ring-blue-500"
-                />
-                <Label htmlFor="edit-task-has-publish-date" className="cursor-pointer">
-                  Set Publish Date
-                </Label>
-              </div>
-
-              {editTask.has_publish_date && (
-                <div>
-                  <Label htmlFor="edit-task-publish-date">Publish Date</Label>
-                  <Input
-                    id="edit-task-publish-date"
-                    type="date"
-                    value={editTask.publish_date}
-                    onChange={(e) => setEditTask({ ...editTask, publish_date: e.target.value })}
-                    className="transition-all focus:ring-2 focus:ring-blue-500"
-                  />
-                </div>
-              )}
-            </div>
-
-            {/* Blocker Reason Section */}
-            {editTask.status === 'blocked' && (
-              <div>
-                <Label htmlFor="edit-task-blocker-reason">Blocking Reason</Label>
-                <Textarea
-                  id="edit-task-blocker-reason"
-                  placeholder="Reason why this task is blocked..."
-                  value={editTask.blocker_reason}
-                  onChange={(e) => setEditTask({ ...editTask, blocker_reason: e.target.value })}
-                  className="transition-all focus:ring-2 focus:ring-blue-500"
-                  rows={2}
-                />
-              </div>
-            )}
           </div>
+{/* Add this section to the Edit Task Dialog */}
+<div className="space-y-3">
+  <div className="flex items-center gap-3">
+    <input
+      type="checkbox"
+      id="edit-task-has-publish-date"
+      checked={editTask.has_publish_date}
+      onChange={(e) => setEditTask({ ...editTask, has_publish_date: e.target.checked })}
+      className="w-4 h-4 text-blue-600 bg-gray-100 border-gray-300 rounded focus:ring-blue-500"
+    />
+    <Label htmlFor="edit-task-has-publish-date" className="cursor-pointer">
+      Set Publish Date
+    </Label>
+  </div>
 
+  {editTask.has_publish_date && (
+    <div>
+      <Label htmlFor="edit-task-publish-date">Publish Date</Label>
+      <Input
+        id="edit-task-publish-date"
+        type="date"
+        value={editTask.publish_date}
+        onChange={(e) => setEditTask({ ...editTask, publish_date: e.target.value })}
+        className="mt-1 transition-all focus:ring-2 focus:ring-blue-500"
+      />
+    </div>
+  )}
+</div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setShowEditTaskDialog(false)}>
+            <Button variant="outline" onClick={() => setShowEditTaskDialog(false)} disabled={isUpdatingTask}>
               Cancel
             </Button>
-            <Button onClick={handleUpdateTask}>
-              Update Task
+            <Button onClick={handleUpdateTask} disabled={isUpdatingTask}>
+              {isUpdatingTask ? 'Updating...' : 'Update Task'}
             </Button>
           </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Task Detail Dialog */}
+      <Dialog open={showTaskDetailDialog} onOpenChange={setShowTaskDetailDialog}>
+        <DialogContent className="max-w-2xl">
+          {selectedTask && (
+            <>
+              <DialogHeader>
+                <DialogTitle className="flex items-center gap-2">
+                  {getPriorityIcon(selectedTask.priority)}
+                  {selectedTask.title}
+                </DialogTitle>
+                <DialogDescription>
+                  Task details and information
+                </DialogDescription>
+              </DialogHeader>
+
+              <div className="space-y-6">
+                {/* Project Information */}
+                <div>
+                  <h3 className="text-lg font-semibold mb-3">Project Information</h3>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4 p-4 bg-gray-50 rounded-lg">
+                    <div>
+                      <p className="text-sm font-medium text-gray-500">Project Name</p>
+                      <p className="font-semibold">{project.name}</p>
+                    </div>
+                    <div>
+                      <p className="text-sm font-medium text-gray-500">Project Status</p>
+                      <Badge variant={project.status === 'active' ? 'default' : 'secondary'}>
+                        {project.status}
+                      </Badge>
+                    </div>
+                    <div>
+                      <p className="text-sm font-medium text-gray-500">Project Manager</p>
+                      <p>{project.manager_name || 'Not assigned'}</p>
+                    </div>
+                    <div>
+                      <p className="text-sm font-medium text-gray-500">Team Size</p>
+                      <p>{project.members?.length || 0} members</p>
+                    </div>
+                    <div>
+                      <p className="text-sm font-medium text-gray-500">Start Date</p>
+                      <p>{new Date(project.start_date).toLocaleDateString()}</p>
+                    </div>
+                    <div>
+                      <p className="text-sm font-medium text-gray-500">End Date</p>
+                      <p>{new Date(project.end_date).toLocaleDateString()}</p>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Task Information */}
+                <div>
+                  <h3 className="text-lg font-semibold mb-3">Task Information</h3>
+                  <div className="space-y-4">
+                    <div>
+                      <p className="text-sm font-medium text-gray-500">Description</p>
+                      <p className="mt-1">{selectedTask.description || 'No description provided'}</p>
+                    </div>
+                    
+                    <div className="grid grid-cols-2 gap-4">
+                      <div>
+                        <p className="text-sm font-medium text-gray-500">Priority</p>
+                        <div className="mt-1">
+                          {getPriorityBadge(selectedTask.priority)}
+                        </div>
+                      </div>
+                      <div>
+                        <p className="text-sm font-medium text-gray-500">Status</p>
+                        <Badge variant="outline" className="mt-1">
+                          {getStatusDisplayName(selectedTask.status)}
+                        </Badge>
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-4">
+                      <div>
+                        <p className="text-sm font-medium text-gray-500">Assignee</p>
+                        <div className="flex items-center gap-2 mt-1">
+                          <User className="w-4 h-4 text-gray-400" />
+                          <span>{selectedTask.assignee_name || 'Unassigned'}</span>
+                        </div>
+                      </div>
+                      {selectedTask.has_publish_date && selectedTask.publish_date && (
+  <div>
+    <p className="text-sm font-medium text-gray-500">Publish Date</p>
+    <div className="flex items-center gap-2 mt-1">
+      <Calendar className="w-4 h-4 text-purple-400" />
+      <span className="text-purple-600">
+        {new Date(selectedTask.publish_date).toLocaleDateString()}
+      </span>
+    </div>
+  </div>
+)}
+
+                    
+
+                       <div className="grid grid-cols-2 gap-4">
+
+                      <div>
+                        <p className="text-sm font-medium text-gray-500">Due Date</p>
+                        <div className="flex items-center gap-2 mt-1">
+                          <Calendar className="w-4 h-4 text-gray-400" />
+                          <span>
+                            {selectedTask.due_date 
+                              ? new Date(selectedTask.due_date).toLocaleDateString()
+                              : 'No due date'
+                            }
+                          </span>
+                        </div>
+
+
+                      </div>
+
+                    </div>
+
+                    <div>
+                      <p className="text-sm font-medium text-gray-500">Created</p>
+                      <p>{new Date(selectedTask.created_at).toLocaleDateString()}</p>
+                    </div>
+                       </div>
+                  </div>
+                </div>
+              </div>
+
+              <DialogFooter>
+                <Button variant="outline" onClick={() => setShowTaskDetailDialog(false)}>
+                  Close
+                </Button>
+                <Button onClick={() => {
+                  setShowTaskDetailDialog(false);
+                  handleEditTask(selectedTask);
+                }}>
+                  <Edit className="w-4 h-4 mr-2" />
+                  Edit Task
+                </Button>
+              </DialogFooter>
+            </>
+          )}
         </DialogContent>
       </Dialog>
 
@@ -2052,9 +2086,11 @@ export function ProjectTasks() {
             {taskToDelete && (
               <div className="bg-red-50 border border-red-200 rounded-lg p-4">
                 <p className="font-medium text-red-800">Task: {taskToDelete.title}</p>
-                <p className="text-sm text-red-600 mt-1">
-                  Assigned to: {taskToDelete.assignee}
-                </p>
+                {taskToDelete.assignee_name && (
+                  <p className="text-sm text-red-600 mt-1">
+                    Assigned to: {taskToDelete.assignee_name}
+                  </p>
+                )}
               </div>
             )}
           </div>
