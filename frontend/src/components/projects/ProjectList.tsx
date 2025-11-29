@@ -1,23 +1,5 @@
 import { useState, useEffect } from 'react';
-import { 
-  Search, 
-  Plus, 
-  FolderKanban, 
-  Users, 
-  Calendar, 
-  TrendingUp,
-  Activity,
-  Target,
-  AlertCircle,
-  CheckCircle,
-  AlertTriangle,
-  Clock,
-  Grid3X3,
-  List,
-  Filter,
-  MoreHorizontal,
-  Eye
-} from 'lucide-react';
+import { Search, Plus, FolderKanban, Users, Calendar, TrendingUp } from 'lucide-react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../ui/card';
 import { Input } from '../ui/input';
 import { Button } from '../ui/button';
@@ -27,15 +9,15 @@ import { Progress } from '../ui/progress';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '../ui/dialog';
 import { Label } from '../ui/label';
 import { Textarea } from '../ui/textarea';
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '../ui/dropdown-menu';
-import { toast } from 'sonner';
+import { toast } from 'sonner@2.0.3';
 import { User } from '../../App';
-import { projectApi, Project as ApiProject, employeeApi, Employee } from '../../services/api';
+import { projectApi, Project as ApiProject } from '../../services/api';
+import { apiConfig } from '../../services/api-config';
 import { ApiError } from '../../services/api-client';
-import { useNavigate } from 'react-router-dom';
 
 interface ProjectListProps {
   user: User;
+  navigateTo: (page: string, params?: any) => void;
 }
 
 interface Project {
@@ -43,7 +25,6 @@ interface Project {
   name: string;
   client?: string;
   manager: string;
-  managerId: number;
   startDate: string;
   endDate: string;
   status: 'active' | 'on-hold' | 'completed';
@@ -51,137 +32,141 @@ interface Project {
   health: 'green' | 'yellow' | 'red';
   teamSize: number;
   totalHours: number;
-  description?: string;
 }
 
-type ViewMode = 'grid' | 'list';
-
-export function ProjectList({ user }: ProjectListProps) {
-  const navigate = useNavigate();
+export function ProjectList({ user, navigateTo }: ProjectListProps) {
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
-  const [viewMode, setViewMode] = useState<ViewMode>('grid');
+  const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
   const [showCreateDialog, setShowCreateDialog] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [isCreating, setIsCreating] = useState(false);
   const [apiProjects, setApiProjects] = useState<ApiProject[]>([]);
-  const [companyUsers, setCompanyUsers] = useState<Employee[]>([]);
-  const [apiError, setApiError] = useState<string | null>(null);
-  
+  const useApi = apiConfig.hasBaseUrl();
   const [newProject, setNewProject] = useState({
     name: '',
     client: '',
     description: '',
     startDate: '',
     endDate: '',
-    managerId: '',
+    manager: '',
     status: 'active' as const,
   });
 
-  // Fetch projects and company users from API
+  // Mock projects (used when API is not configured)
+  const mockProjects: Project[] = [
+    {
+      id: '1',
+      name: 'E-commerce Platform',
+      client: 'Acme Corp',
+      manager: 'Sarah Johnson',
+      startDate: 'Jan 15, 2024',
+      endDate: 'Dec 31, 2024',
+      status: 'active',
+      completion: 75,
+      health: 'green',
+      teamSize: 8,
+      totalHours: 1240,
+    },
+    {
+      id: '2',
+      name: 'Mobile App Redesign',
+      client: 'TechStart Inc',
+      manager: 'Sarah Johnson',
+      startDate: 'Mar 1, 2024',
+      endDate: 'Nov 30, 2024',
+      status: 'active',
+      completion: 45,
+      health: 'yellow',
+      teamSize: 5,
+      totalHours: 680,
+    },
+    {
+      id: '3',
+      name: 'API Integration',
+      client: 'Digital Solutions',
+      manager: 'Sarah Johnson',
+      startDate: 'Apr 10, 2024',
+      endDate: 'Oct 31, 2024',
+      status: 'active',
+      completion: 90,
+      health: 'green',
+      teamSize: 3,
+      totalHours: 420,
+    },
+    {
+      id: '4',
+      name: 'CRM System',
+      client: 'Enterprise Co',
+      manager: 'Mike Chen',
+      startDate: 'Feb 1, 2024',
+      endDate: 'Sep 30, 2024',
+      status: 'active',
+      completion: 30,
+      health: 'red',
+      teamSize: 6,
+      totalHours: 380,
+    },
+    {
+      id: '5',
+      name: 'Legacy System Migration',
+      client: 'OldTech Ltd',
+      manager: 'Sarah Johnson',
+      startDate: 'Jan 1, 2024',
+      endDate: 'Jun 30, 2024',
+      status: 'completed',
+      completion: 100,
+      health: 'green',
+      teamSize: 4,
+      totalHours: 960,
+    },
+  ];
+
+  // Fetch projects from API
   useEffect(() => {
-    fetchProjects();
-    fetchCompanyUsers();
-  }, []);
+    if (useApi) {
+      fetchProjects();
+    }
+  }, [useApi]);
 
   const fetchProjects = async () => {
     setIsLoading(true);
-    setApiError(null);
     try {
       const data = await projectApi.list();
       setApiProjects(data);
     } catch (error) {
       if (error instanceof ApiError) {
-        const errorMessage = `Failed to load projects: ${error.message}`;
-        setApiError(errorMessage);
-        toast.error(errorMessage);
+        toast.error(`Failed to load projects: ${error.message}`);
       }
     } finally {
       setIsLoading(false);
     }
   };
 
-  const fetchCompanyUsers = async () => {
-    try {
-      const users = await employeeApi.list();
-      setCompanyUsers(users);
-    } catch (error) {
-      console.error('Failed to fetch company users:', error);
-      toast.error('Failed to load company users');
-    }
-  };
-
-  // Map API projects to local Project format with real data
+  // Map API projects to local Project format
   const mapApiProjectToLocal = (apiProject: ApiProject): Project => {
     const startDate = new Date(apiProject.start_date);
     const endDate = new Date(apiProject.end_date);
     
-    // Calculate real progress based on task completion
-    let completion = 0;
-    if (apiProject.tasks && apiProject.tasks.length > 0) {
-      const completedTasks = apiProject.tasks.filter(task => task.status === 'done').length;
-      completion = Math.round((completedTasks / apiProject.tasks.length) * 100);
-    } else if (apiProject.total_tasks && apiProject.completed_tasks) {
-      // Use the aggregated task counts from the list query
-      completion = apiProject.total_tasks > 0 
-        ? Math.round((apiProject.completed_tasks / apiProject.total_tasks) * 100)
-        : 0;
-    }
-
-    // If project is completed, set to 100%
-    if (apiProject.status === 'completed') {
-      completion = 100;
-    }
-    
-    // Determine health based on progress and status
-    let health: 'green' | 'yellow' | 'red' = 'green';
-    if (apiProject.status === 'on-hold') {
-      health = 'yellow';
-    } else if (completion > 80 && apiProject.status !== 'completed') {
-      health = 'red';
-    } else if (completion > 60 && apiProject.status !== 'completed') {
-      health = 'yellow';
-    }
-
-    // Calculate total hours from project data
-    const totalHours = apiProject.members?.reduce((sum, member) => sum + (member.total_hours || 0), 0) || 0;
-    
-    // Get real team member count
-    const teamSize = apiProject.member_count || apiProject.members?.length || 0;
-    
-    // Capitalize manager name
-    const capitalizeName = (name: string) => {
-      return name.split(' ').map(word => 
-        word.charAt(0).toUpperCase() + word.slice(1).toLowerCase()
-      ).join(' ');
-    };
-
     return {
       id: apiProject.id.toString(),
       name: apiProject.name,
-      client: apiProject.client_name || '',
-      manager: apiProject.manager_name ? capitalizeName(apiProject.manager_name) : 'Unassigned',
-      managerId: apiProject.manager_id || 0,
-      startDate: startDate.toLocaleDateString('en-IN', { 
-        day: 'numeric', 
-        month: 'short', 
-        year: 'numeric' 
-      }),
-      endDate: endDate.toLocaleDateString('en-IN', { 
-        day: 'numeric', 
-        month: 'short', 
-        year: 'numeric' 
-      }),
+      client: apiProject.client || '',
+      manager: apiProject.manager_name || 'Unassigned',
+      startDate: startDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }),
+      endDate: endDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }),
       status: apiProject.status as 'active' | 'on-hold' | 'completed',
-      completion: completion,
-      health: health,
-      teamSize: teamSize,
-      totalHours: totalHours,
-      description: apiProject.description
+      completion: 50, // Would need additional API data
+      health: 'green' as const, // Would need additional API data
+      teamSize: apiProject.members?.length || 0,
+      totalHours: 0, // Would need additional API data
     };
   };
 
-  const projects = apiProjects.map(mapApiProjectToLocal);
+  // Use API projects if available, otherwise use mock
+  const projects = useApi 
+    ? apiProjects.map(mapApiProjectToLocal)
+    : mockProjects;
 
   const filteredProjects = projects.filter(project => {
     const matchesSearch = project.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -197,64 +182,71 @@ export function ProjectList({ user }: ProjectListProps) {
     atRisk: projects.filter(p => p.health === 'yellow' || p.health === 'red').length,
   };
 
-  const getHealthIndicator = (health: Project['health']) => {
-    const config = {
-      green: { color: 'bg-green-500', tooltip: 'On Track' },
-      yellow: { color: 'bg-yellow-500', tooltip: 'Needs Attention' },
-      red: { color: 'bg-red-500', tooltip: 'At Risk' }
-    };
-    
-    return (
-      <div className="relative group">
-        <div className={`w-3 h-3 rounded-full ${config[health].color}`} />
-        <div className="absolute bottom-full left-1/2 transform -translate-x-1/2 mb-2 hidden group-hover:block bg-gray-900 text-white text-xs rounded py-1 px-2 whitespace-nowrap z-10">
-          {config[health].tooltip}
-          <div className="absolute top-full left-1/2 transform -translate-x-1/2 border-4 border-transparent border-t-gray-900"></div>
-        </div>
-      </div>
-    );
+  const getHealthColor = (health: Project['health']) => {
+    switch (health) {
+      case 'green':
+        return 'text-green-600';
+      case 'yellow':
+        return 'text-yellow-600';
+      case 'red':
+        return 'text-red-600';
+    }
   };
 
-  const getStatusBadge = (status: Project['status']) => {
-    const config = {
-      active: { variant: 'default' as const, class: 'bg-green-100 text-green-800 border-green-200' },
-      completed: { variant: 'secondary' as const, class: 'bg-blue-100 text-blue-800 border-blue-200' },
-      'on-hold': { variant: 'outline' as const, class: 'bg-yellow-100 text-yellow-800 border-yellow-200' }
-    };
-    
+  const getHealthIndicator = (health: Project['health']) => {
     return (
-      <Badge variant={config[status].variant} className={config[status].class}>
-        {status === 'active' && <div className="w-2 h-2 rounded-full bg-green-500 mr-1 animate-pulse" />}
-        {status === 'completed' && <CheckCircle className="w-3 h-3 mr-1" />}
-        {status === 'on-hold' && <AlertTriangle className="w-3 h-3 mr-1" />}
-        {status.charAt(0).toUpperCase() + status.slice(1)}
-      </Badge>
+      <div className={`w-3 h-3 rounded-full ${
+        health === 'green' ? 'bg-green-500' :
+        health === 'yellow' ? 'bg-yellow-500' :
+        'bg-red-500'
+      }`} />
     );
   };
 
   const handleCreateProject = async () => {
-    if (!newProject.name || !newProject.startDate || !newProject.endDate || !newProject.managerId) {
+    if (!newProject.name || !newProject.startDate || !newProject.endDate) {
       toast.error('Please fill in all required fields');
       return;
     }
 
-    setIsCreating(true);
-    try {
-      const projectData = {
-        name: newProject.name,
-        description: newProject.description || undefined,
-        clientName: newProject.client || undefined,
-        managerId: parseInt(newProject.managerId),
-        startDate: newProject.startDate,
-        endDate: newProject.endDate,
-        status: newProject.status,
-      };
+    if (useApi) {
+      setIsCreating(true);
+      try {
+        const projectData = {
+          name: newProject.name,
+          client: newProject.client || undefined,
+          description: newProject.description || undefined,
+          start_date: newProject.startDate,
+          end_date: newProject.endDate,
+          status: newProject.status,
+        };
 
-      await projectApi.create(projectData);
-      toast.success('Project created successfully');
-      
-      await fetchProjects();
-      
+        await projectApi.create(projectData);
+        toast.success('Project created successfully');
+        
+        // Refresh projects list
+        await fetchProjects();
+        
+        setShowCreateDialog(false);
+        setNewProject({
+          name: '',
+          client: '',
+          description: '',
+          startDate: '',
+          endDate: '',
+          manager: '',
+          status: 'active',
+        });
+      } catch (error) {
+        if (error instanceof ApiError) {
+          toast.error(`Failed to create project: ${error.message}`);
+        }
+      } finally {
+        setIsCreating(false);
+      }
+    } else {
+      // Mock mode
+      toast.success('Project created successfully (Mock Mode)');
       setShowCreateDialog(false);
       setNewProject({
         name: '',
@@ -262,172 +254,20 @@ export function ProjectList({ user }: ProjectListProps) {
         description: '',
         startDate: '',
         endDate: '',
-        managerId: '',
+        manager: '',
         status: 'active',
       });
-    } catch (error) {
-      if (error instanceof ApiError) {
-        toast.error(`Failed to create project: ${error.message}`);
-      }
-    } finally {
-      setIsCreating(false);
     }
   };
-
-  const handleProjectClick = (projectId: string) => {
-    navigate(`/projects/${projectId}`);
-  };
-
-  // Grid View Component with Real Data
-  const GridView = () => (
-    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-      {filteredProjects.map(project => (
-        <Card
-          key={project.id}
-          className="hover:shadow-md transition-all duration-300 cursor-pointer border border-gray-200 hover:border-gray-300 h-full"
-          onClick={() => handleProjectClick(project.id)}
-        >
-          <CardHeader className="pb-3">
-            <div className="flex items-start justify-between gap-2">
-              <div className="flex-1 min-w-0">
-                <CardTitle className="text-lg font-semibold text-gray-900 truncate">
-                  {project.name}
-                </CardTitle>
-                {project.client && (
-                  <CardDescription className="text-sm text-gray-600 mt-1 truncate">
-                    {project.client}
-                  </CardDescription>
-                )}
-              </div>
-              {getHealthIndicator(project.health)}
-            </div>
-          </CardHeader>
-          
-          <CardContent className="space-y-4">
-            {/* Real Progress Bar based on task completion */}
-            <div className="space-y-2">
-              <div className="flex justify-between text-sm">
-                <span className="text-gray-600 font-medium">Progress</span>
-                <span className="font-semibold text-gray-900">{project.completion}%</span>
-              </div>
-              <Progress value={project.completion} className="h-2" />
-            </div>
-
-            {/* Real Team Members Count */}
-            <div className="flex items-center justify-between text-sm">
-              <div className="flex items-center gap-4">
-                <div className="flex items-center gap-1 text-gray-600">
-                  <Users className="w-4 h-4" />
-                  <span className="font-medium">{project.teamSize} {project.teamSize === 1 ? 'member' : 'members'}</span>
-                </div>
-                <div className="flex items-center gap-1 text-gray-600">
-                  <Clock className="w-4 h-4" />
-                  <span className="font-medium">{project.totalHours}h</span>
-                </div>
-              </div>
-            </div>
-
-            {/* Real Project Dates */}
-            <div className="flex items-center gap-2 text-sm text-gray-500 bg-gray-50 rounded-lg p-2">
-              <Calendar className="w-4 h-4" />
-              <span className="font-medium">{project.startDate} - {project.endDate}</span>
-            </div>
-
-            {/* Status and Capitalized Manager Name */}
-            <div className="flex justify-between items-center pt-2 border-t border-gray-100">
-              {getStatusBadge(project.status)}
-              <span className="text-xs text-gray-500 font-medium">By: {project.manager}</span>
-            </div>
-          </CardContent>
-        </Card>
-      ))}
-    </div>
-  );
-
-  // List View Component with Real Data
-  const ListView = () => (
-    <div className="space-y-4">
-      {filteredProjects.map(project => (
-        <Card
-          key={project.id}
-          className="hover:shadow-md transition-all duration-300 cursor-pointer border border-gray-200 hover:border-gray-300"
-          onClick={() => handleProjectClick(project.id)}
-        >
-          <CardContent className="p-6">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-4 flex-1">
-                <div className="flex items-center gap-3 min-w-0 flex-1">
-                  {getHealthIndicator(project.health)}
-                  <div className="min-w-0 flex-1">
-                    <h3 className="font-semibold text-gray-900 truncate">
-                      {project.name}
-                    </h3>
-                    {project.client && (
-                      <p className="text-sm text-gray-600 truncate">{project.client}</p>
-                    )}
-                  </div>
-                </div>
-                
-                <div className="flex items-center gap-6 text-sm text-gray-600">
-                  <div className="text-center">
-                    <div className="font-semibold text-gray-900">{project.teamSize}</div>
-                    <div className="text-xs text-gray-500">Members</div>
-                  </div>
-                  <div className="text-center">
-                    <div className="font-semibold text-gray-900">{project.totalHours}h</div>
-                    <div className="text-xs text-gray-500">Hours</div>
-                  </div>
-                  <div className="w-32">
-                    <div className="flex justify-between text-xs mb-1">
-                      <span>Progress</span>
-                      <span className="font-semibold">{project.completion}%</span>
-                    </div>
-                    <Progress value={project.completion} className="h-2" />
-                  </div>
-                </div>
-              </div>
-              
-              <div className="flex items-center gap-4 ml-6">
-                <div className="text-right">
-                  <div className="text-sm text-gray-600 mb-1">{project.startDate} - {project.endDate}</div>
-                  <div className="text-xs text-gray-500">By: {project.manager}</div>
-                </div>
-                {getStatusBadge(project.status)}
-                <DropdownMenu>
-                  <DropdownMenuTrigger asChild>
-                    <Button variant="ghost" size="sm" className="opacity-0 group-hover:opacity-100 transition-opacity">
-                      <MoreHorizontal className="w-4 h-4" />
-                    </Button>
-                  </DropdownMenuTrigger>
-                  <DropdownMenuContent align="end">
-                    <DropdownMenuItem onClick={() => handleProjectClick(project.id)}>
-                      <Eye className="w-4 h-4 mr-2" />
-                      View Details
-                    </DropdownMenuItem>
-                  </DropdownMenuContent>
-                </DropdownMenu>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-      ))}
-    </div>
-  );
 
   return (
     <div className="p-6 space-y-6">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-3xl font-bold tracking-tight">Projects</h1>
+          <h1>Projects</h1>
           <p className="text-gray-500">Manage and track all projects</p>
-          {apiError && (
-            <div className="flex items-center gap-2 text-sm text-amber-600 mt-2 bg-amber-50 px-3 py-2 rounded-lg border border-amber-200">
-              <AlertCircle className="w-4 h-4" />
-              {apiError}
-            </div>
-          )}
         </div>
-        {(user.role === 'admin' || user.role === 'manager' || user.role === 'hr') && (
+        {(user.role === 'admin' || user.role === 'manager') && (
           <Button className="gap-2" onClick={() => setShowCreateDialog(true)}>
             <Plus className="w-4 h-4" />
             New Project
@@ -435,81 +275,40 @@ export function ProjectList({ user }: ProjectListProps) {
         )}
       </div>
 
-      {/* Stats Cards with Real Data */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-        {/* Total Projects Card */}
-        <Card className="bg-white/80 backdrop-blur-sm border border-white/20 rounded-xl p-6 shadow-lg hover:shadow-xl transition-all duration-300">
-          <CardContent className="p-0">
-            <div className="flex items-center justify-between mb-4">
-              <div>
-                <p className="text-xs font-semibold text-gray-600 uppercase tracking-wide">Total Projects</p>
-                <p className="text-2xl font-bold text-gray-900">{stats.total}</p>
-              </div>
-              <div className="p-3 bg-blue-500/10 rounded-xl">
-                <FolderKanban className="w-6 h-6 text-blue-600" />
-              </div>
-            </div>
-            <div className="flex items-center gap-2 text-xs text-gray-500">
-              <Calendar className="w-4 h-4" />
-              <span>All time projects</span>
-            </div>
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+        <Card>
+          <CardHeader className="pb-3">
+            <CardDescription>Total Projects</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <p>{stats.total}</p>
           </CardContent>
         </Card>
 
-        {/* Active Projects Card */}
-        <Card className="bg-white/80 backdrop-blur-sm border border-white/20 rounded-xl p-6 shadow-lg hover:shadow-xl transition-all duration-300">
-          <CardContent className="p-0">
-            <div className="flex items-center justify-between mb-4">
-              <div>
-                <p className="text-xs font-semibold text-gray-600 uppercase tracking-wide">Active Projects</p>
-                <p className="text-2xl font-bold text-gray-900">{stats.active}</p>
-              </div>
-              <div className="p-3 bg-green-500/10 rounded-xl">
-                <Activity className="w-6 h-6 text-green-600" />
-              </div>
-            </div>
-            <div className="flex items-center gap-2 text-xs text-gray-500">
-              <Clock className="w-4 h-4" />
-              <span>Currently running</span>
-            </div>
+        <Card>
+          <CardHeader className="pb-3">
+            <CardDescription>Active Projects</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <p className="text-blue-600">{stats.active}</p>
           </CardContent>
         </Card>
 
-        {/* On Track Card */}
-        <Card className="bg-white/80 backdrop-blur-sm border border-white/20 rounded-xl p-6 shadow-lg hover:shadow-xl transition-all duration-300">
-          <CardContent className="p-0">
-            <div className="flex items-center justify-between mb-4">
-              <div>
-                <p className="text-xs font-semibold text-gray-600 uppercase tracking-wide">On Track</p>
-                <p className="text-2xl font-bold text-gray-900">{stats.onTrack}</p>
-              </div>
-              <div className="p-3 bg-emerald-500/10 rounded-xl">
-                <Target className="w-6 h-6 text-emerald-600" />
-              </div>
-            </div>
-            <div className="flex items-center gap-2 text-xs text-gray-500">
-              <TrendingUp className="w-4 h-4" />
-              <span>Meeting deadlines</span>
-            </div>
+        <Card>
+          <CardHeader className="pb-3">
+            <CardDescription>On Track</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <p className="text-green-600">{stats.onTrack}</p>
           </CardContent>
         </Card>
 
-        {/* At Risk Card */}
-        <Card className="bg-white/80 backdrop-blur-sm border border-white/20 rounded-xl p-6 shadow-lg hover:shadow-xl transition-all duration-300">
-          <CardContent className="p-0">
-            <div className="flex items-center justify-between mb-4">
-              <div>
-                <p className="text-xs font-semibold text-gray-600 uppercase tracking-wide">At Risk</p>
-                <p className="text-2xl font-bold text-gray-900">{stats.atRisk}</p>
-              </div>
-              <div className="p-3 bg-amber-500/10 rounded-xl">
-                <AlertCircle className="w-6 h-6 text-amber-600" />
-              </div>
-            </div>
-            <div className="flex items-center gap-2 text-xs text-gray-500">
-              <AlertTriangle className="w-4 h-4" />
-              <span>Need attention</span>
-            </div>
+        <Card>
+          <CardHeader className="pb-3">
+            <CardDescription>At Risk</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <p className="text-red-600">{stats.atRisk}</p>
           </CardContent>
         </Card>
       </div>
@@ -523,18 +322,14 @@ export function ProjectList({ user }: ProjectListProps) {
                 variant={viewMode === 'grid' ? 'default' : 'outline'}
                 size="sm"
                 onClick={() => setViewMode('grid')}
-                className="gap-2"
               >
-                <Grid3X3 className="w-4 h-4" />
                 Grid
               </Button>
               <Button
                 variant={viewMode === 'list' ? 'default' : 'outline'}
                 size="sm"
                 onClick={() => setViewMode('list')}
-                className="gap-2"
               >
-                <List className="w-4 h-4" />
                 List
               </Button>
             </div>
@@ -564,34 +359,103 @@ export function ProjectList({ user }: ProjectListProps) {
             </Select>
           </div>
 
-          {isLoading ? (
-            <div className="flex justify-center py-8">
-              <div className="flex items-center gap-3 text-gray-600">
-                <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-blue-600"></div>
-                <p className="text-lg">Loading projects...</p>
-              </div>
+          {viewMode === 'grid' ? (
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+              {filteredProjects.map(project => (
+                <Card
+                  key={project.id}
+                  className="hover:shadow-lg transition-shadow cursor-pointer"
+                  onClick={() => navigateTo('project-detail', { projectId: project.id })}
+                >
+                  <CardHeader>
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="flex-1 min-w-0">
+                        <CardTitle className="text-base truncate">{project.name}</CardTitle>
+                        {project.client && (
+                          <CardDescription className="truncate">{project.client}</CardDescription>
+                        )}
+                      </div>
+                      {getHealthIndicator(project.health)}
+                    </div>
+                  </CardHeader>
+                  <CardContent className="space-y-3">
+                    <div className="space-y-1">
+                      <div className="flex justify-between text-sm">
+                        <span className="text-gray-500">Progress</span>
+                        <span>{project.completion}%</span>
+                      </div>
+                      <Progress value={project.completion} />
+                    </div>
+
+                    <div className="flex items-center gap-4 text-sm text-gray-500">
+                      <div className="flex items-center gap-1">
+                        <Users className="w-4 h-4" />
+                        <span>{project.teamSize}</span>
+                      </div>
+                      <div className="flex items-center gap-1">
+                        <TrendingUp className="w-4 h-4" />
+                        <span>{project.totalHours}h</span>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-2 text-xs text-gray-500">
+                      <Calendar className="w-3 h-3" />
+                      <span>{project.startDate} - {project.endDate}</span>
+                    </div>
+
+                    <Badge variant={
+                      project.status === 'active' ? 'default' :
+                      project.status === 'completed' ? 'secondary' :
+                      'outline'
+                    }>
+                      {project.status}
+                    </Badge>
+                  </CardContent>
+                </Card>
+              ))}
             </div>
-          ) : filteredProjects.length === 0 ? (
-            <div className="flex flex-col items-center justify-center py-12 text-center">
-              <FolderKanban className="w-16 h-16 text-gray-300 mb-4" />
-              <p className="text-gray-500 text-lg mb-2">No projects found</p>
-              <p className="text-gray-400 text-sm mb-4">
-                {searchTerm || statusFilter !== 'all' 
-                  ? 'Try adjusting your search or filter criteria' 
-                  : 'Get started by creating your first project'
-                }
-              </p>
-              {(user.role === 'admin' || user.role === 'manager' || user.role === 'hr') && !searchTerm && statusFilter === 'all' && (
-                <Button onClick={() => setShowCreateDialog(true)}>
-                  <Plus className="w-4 h-4 mr-2" />
-                  New Project
-                </Button>
-              )}
-            </div>
-          ) : viewMode === 'grid' ? (
-            <GridView />
           ) : (
-            <ListView />
+            <div className="space-y-2">
+              {filteredProjects.map(project => (
+                <div
+                  key={project.id}
+                  className="flex items-center gap-4 p-4 border rounded-lg hover:bg-gray-50 cursor-pointer"
+                  onClick={() => navigateTo('project-detail', { projectId: project.id })}
+                >
+                  {getHealthIndicator(project.health)}
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2">
+                      <p className="truncate">{project.name}</p>
+                      <Badge variant={
+                        project.status === 'active' ? 'default' :
+                        project.status === 'completed' ? 'secondary' :
+                        'outline'
+                      }>
+                        {project.status}
+                      </Badge>
+                    </div>
+                    <p className="text-sm text-gray-500">{project.client} • {project.manager}</p>
+                  </div>
+                  <div className="flex items-center gap-6 text-sm">
+                    <div className="w-32">
+                      <div className="flex justify-between text-xs mb-1">
+                        <span className="text-gray-500">Progress</span>
+                        <span>{project.completion}%</span>
+                      </div>
+                      <Progress value={project.completion} />
+                    </div>
+                    <div className="flex items-center gap-1 text-gray-500">
+                      <Users className="w-4 h-4" />
+                      <span>{project.teamSize}</span>
+                    </div>
+                    <div className="flex items-center gap-1 text-gray-500">
+                      <TrendingUp className="w-4 h-4" />
+                      <span>{project.totalHours}h</span>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
           )}
         </CardContent>
       </Card>
@@ -665,20 +529,18 @@ export function ProjectList({ user }: ProjectListProps) {
 
             <div className="grid grid-cols-2 gap-4">
               <div>
-                <Label htmlFor="manager">Project Manager *</Label>
+                <Label htmlFor="manager">Project Manager</Label>
                 <Select
-                  value={newProject.managerId}
-                  onValueChange={(value) => setNewProject({ ...newProject, managerId: value })}
+                  value={newProject.manager}
+                  onValueChange={(value) => setNewProject({ ...newProject, manager: value })}
                 >
                   <SelectTrigger id="manager" className="mt-1">
                     <SelectValue placeholder="Select manager" />
                   </SelectTrigger>
                   <SelectContent>
-                    {companyUsers.map((user) => (
-                      <SelectItem key={user.id} value={user.id.toString()}>
-                        {user.name} ({user.role})
-                      </SelectItem>
-                    ))}
+                    <SelectItem value="Sarah Johnson">Sarah Johnson</SelectItem>
+                    <SelectItem value="Mike Chen">Mike Chen</SelectItem>
+                    <SelectItem value="Admin User">Admin User</SelectItem>
                   </SelectContent>
                 </Select>
               </div>

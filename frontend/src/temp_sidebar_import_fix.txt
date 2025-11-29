@@ -1,0 +1,36 @@
+import { Avatar, AvatarFallback, AvatarImage } from './ui/avatar';
+import { Button } from './ui/button';
+import { Separator } from './ui/separator';
+import { Badge } from './ui/badge';
+import { CompanySwitcher } from './CompanySwitcher';
+import { useState } from 'react';
+import { useCompany } from '../contexts/CompanyContext';
+import { canAccessProjects, canAccessLeads, canAccessSkillMatrix, canAccessTeamStructure, canAccessReports } from '../utils/rbac';
+import { User, UserRole } from '../App';
+import { 
+  LayoutDashboard, 
+  Users2, 
+  Clock, 
+  FileText, 
+  FolderKanban, 
+  CheckSquare, 
+  Users, 
+  Award, 
+  BarChart3, 
+  Settings, 
+  Building2, 
+  ChevronRight, 
+  LogOut,
+  FolderOpen,
+  Calendar,
+  Menu,
+  X,
+  ChevronDown,
+  TrendingUp,
+  Target,
+  BookOpen,
+  Layers,
+  DollarSign,
+  Receipt,
+  Wallet
+} from 'lucide-react';

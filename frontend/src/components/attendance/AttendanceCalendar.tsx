@@ -1,16 +1,14 @@
 import { useState, useEffect } from 'react';
-import { ChevronLeft, ChevronRight, CheckCircle, XCircle, Clock, Calendar } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Calendar, Clock, MapPin } from 'lucide-react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../ui/card';
 import { Button } from '../ui/button';
 import { Badge } from '../ui/badge';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogFooter } from '../ui/dialog';
-import { Input } from '../ui/input';
-import { Label } from '../ui/label';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../ui/select';
 import { Textarea } from '../ui/textarea';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../ui/select';
 import { toast } from 'sonner';
 import { User } from '../../App';
-import { attendanceApi, AttendanceDay } from '../../services/api';
+import { attendanceApi } from '../../services/api';
 import { apiConfig } from '../../services/api-config';
 import { ApiError } from '../../services/api-client';
 
@@ -19,83 +17,155 @@ interface AttendanceCalendarProps {
 }
 
 interface DayData {
-  date: number;
-  status: 'present' | 'absent' | 'leave' | 'weekend' | 'holiday' | 'half-day' | null;
+  date: Date;
+  status: 'present' | 'absent' | 'leave' | 'weekend' | 'holiday' | 'half-day' | 'late' | null;
   checkIn?: string;
   checkOut?: string;
   hours?: number;
   notes?: string;
-  workDate?: string;
+  isToday?: boolean;
+  canRegularize?: boolean;
+}
+
+interface RegularizationRequest {
+  date: string;
+  type: 'check-in' | 'check-out' | 'both';
+  proposedCheckIn?: string;
+  proposedCheckOut?: string;
+  reason: string;
 }
 
 export function AttendanceCalendar({ user }: AttendanceCalendarProps) {
   const [currentMonth, setCurrentMonth] = useState(new Date());
   const [selectedDay, setSelectedDay] = useState<DayData | null>(null);
   const [showDetails, setShowDetails] = useState(false);
-  const [showRegularizationModal, setShowRegularizationModal] = useState(false);
-  const [attendanceData, setAttendanceData] = useState<AttendanceDay[]>([]);
-  const [loading, setLoading] = useState(false);
-  const [regularizationType, setRegularizationType] = useState<'check_in' | 'check_out'>('check_in');
-  const [proposedTime, setProposedTime] = useState('');
-  const [reason, setReason] = useState('');
-  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [showRegularization, setShowRegularization] = useState(false);
+  const [regularizationData, setRegularizationData] = useState<RegularizationRequest>({
+    date: '',
+    type: 'check-in',
+    reason: ''
+  });
+  const [calendarData, setCalendarData] = useState<DayData[]>([]);
+  const [isLoading, setIsLoading] = useState(false);
   const useApi = apiConfig.hasBaseUrl();
 
-  // Fetch attendance data when month changes
+  // Fetch calendar data
   useEffect(() => {
     if (useApi) {
-      fetchAttendanceData();
+      fetchCalendarData();
+    } else {
+      // Mock data for demo
+      generateMockCalendarData();
     }
   }, [currentMonth, useApi]);
 
-  const fetchAttendanceData = async () => {
-    if (!useApi) return;
-    
-    setLoading(true);
+  const fetchCalendarData = async () => {
+    setIsLoading(true);
     try {
       const year = currentMonth.getFullYear();
       const month = currentMonth.getMonth() + 1;
       const data = await attendanceApi.getCalendar(year, month);
-      console.log("Calendar Data", data);
-      setAttendanceData(data);
+      setCalendarData(transformApiData(data));
     } catch (error) {
       if (error instanceof ApiError) {
-        console.error('Failed to fetch attendance calendar:', error.message);
+        toast.error(`Failed to load calendar: ${error.message}`);
       }
     } finally {
-      setLoading(false);
+      setIsLoading(false);
     }
   };
 
-  // Helper function to normalize dates for comparison
-  const normalizeDate = (dateString: string): string => {
-    if (dateString.includes('T')) {
-      return dateString.split('T')[0];
+  const generateMockCalendarData = () => {
+    const year = currentMonth.getFullYear();
+    const month = currentMonth.getMonth();
+    const daysInMonth = new Date(year, month + 1, 0).getDate();
+    const data: DayData[] = [];
+
+    for (let i = 1; i <= daysInMonth; i++) {
+      const date = new Date(year, month, i);
+      const dayOfWeek = date.getDay();
+      
+      let status: DayData['status'] = null;
+      let checkIn, checkOut, hours;
+
+      // Mock logic for different statuses
+      if (dayOfWeek === 0 || dayOfWeek === 6) {
+        status = 'weekend';
+      } else if (i % 10 === 0) {
+        status = 'holiday';
+      } else if (i % 7 === 0) {
+        status = 'leave';
+      } else if (i % 8 === 0) {
+        status = 'absent';
+      } else if (i % 12 === 0) {
+        status = 'half-day';
+        checkIn = '09:00 AM';
+        checkOut = '01:00 PM';
+        hours = 4;
+      } else if (i % 5 === 0) {
+        status = 'late';
+        checkIn = '10:30 AM';
+        checkOut = '06:00 PM';
+        hours = 7.5;
+      } else {
+        status = 'present';
+        checkIn = '09:15 AM';
+        checkOut = '06:10 PM';
+        hours = 8.5;
+      }
+
+      data.push({
+        date,
+        status,
+        checkIn,
+        checkOut,
+        hours,
+        isToday: isToday(date),
+        canRegularize: canRegularize(date, status)
+      });
     }
-    return dateString;
+
+    setCalendarData(data);
   };
 
-  // Helper function to format time in Indian format (24-hour format)
-  const formatTimeToIndian = (dateString: string): string => {
-    const date = new Date(dateString);
-    // Use IST timezone (UTC+5:30)
-    return date.toLocaleTimeString('en-IN', {
-      hour: '2-digit',
-      minute: '2-digit',
-      hour12: false // Use 24-hour format
-    });
+  const transformApiData = (apiData: any[]): DayData[] => {
+    return apiData.map(item => ({
+      date: new Date(item.date),
+      status: item.status as DayData['status'],
+      checkIn: item.check_in_at ? new Date(item.check_in_at).toLocaleTimeString('en-US', { 
+        hour: '2-digit', 
+        minute: '2-digit',
+        hour12: true 
+      }) : undefined,
+      checkOut: item.check_out_at ? new Date(item.check_out_at).toLocaleTimeString('en-US', { 
+        hour: '2-digit', 
+        minute: '2-digit',
+        hour12: true 
+      }) : undefined,
+      hours: item.work_hours,
+      notes: item.remarks,
+      isToday: isToday(new Date(item.date)),
+      canRegularize: canRegularize(new Date(item.date), item.status)
+    }));
   };
 
-  // Helper function to create date string in IST
-  const createISTDateString = (year: number, month: number, day: number): string => {
-    // Create date in local timezone (assuming server uses IST)
-    const date = new Date(year, month, day);
-    return date.toISOString().split('T')[0];
+  const isToday = (date: Date) => {
+    const today = new Date();
+    return date.toDateString() === today.toDateString();
   };
 
-  const getDaysInMonth = (date: Date) => {
-    const year = date.getFullYear();
-    const month = date.getMonth();
+  const canRegularize = (date: Date, status: DayData['status']) => {
+    const today = new Date();
+    const sevenDaysAgo = new Date(today);
+    sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
+    
+    return date >= sevenDaysAgo && date <= today && 
+           (status === 'absent' || status === 'late' || status === null);
+  };
+
+  const getDaysInMonthGrid = () => {
+    const year = currentMonth.getFullYear();
+    const month = currentMonth.getMonth();
     const firstDay = new Date(year, month, 1).getDay();
     const daysInMonth = new Date(year, month + 1, 0).getDate();
     
@@ -106,104 +176,16 @@ export function AttendanceCalendar({ user }: AttendanceCalendarProps) {
       days.push(null);
     }
     
-    // Add days of the month with real attendance data
-    for (let i = 1; i <= daysInMonth; i++) {
-      const currentDate = new Date(year, month, i);
-      const dayOfWeek = currentDate.getDay();
-      const dateString = createISTDateString(year, month, i);
-      
-      // Find attendance record for this date using normalized comparison
-      const attendanceRecord = attendanceData.find(record => {
-        const recordDate = normalizeDate(record.work_date);
-        return recordDate === dateString;
-      });
-
-      let status: DayData['status'] = null;
-      
-      // Determine status based on day and attendance record
-      if (dayOfWeek === 0 || dayOfWeek === 6) {
-        status = 'weekend';
-      } else if (attendanceRecord) {
-        if (attendanceRecord.status === 'present') {
-          status = 'present';
-        } else if (attendanceRecord.status === 'absent') {
-          status = 'absent';
-        } else if (attendanceRecord.status === 'leave') {
-          status = 'leave';
-        } else if (attendanceRecord.status === 'half-day') {
-          status = 'half-day';
-        }
-      } else {
-        // No record found for a weekday - consider as future day or absent
-        const today = new Date();
-        today.setHours(0, 0, 0, 0);
-        if (currentDate > today) {
-          status = null; // Future date
-        } else {
-          status = 'absent'; // Past weekday with no attendance record
-        }
-      }
-
-      // Calculate hours if check-in and check-out exist
-      let hours = undefined;
-      if (attendanceRecord?.check_in_at && attendanceRecord?.check_out_at) {
-        const checkIn = new Date(attendanceRecord.check_in_at);
-        const checkOut = new Date(attendanceRecord.check_out_at);
-        const diff = checkOut.getTime() - checkIn.getTime();
-        hours = Math.round((diff / (1000 * 60 * 60)) * 10) / 10;
-      }
-
-      days.push({
-        date: i,
-        status,
-        checkIn: attendanceRecord?.check_in_at ? 
-          formatTimeToIndian(attendanceRecord.check_in_at) : undefined,
-        checkOut: attendanceRecord?.check_out_at ? 
-          formatTimeToIndian(attendanceRecord.check_out_at) : undefined,
-        hours,
-        workDate: dateString
-      });
-    }
+    // Add days of the month
+    calendarData.forEach(day => {
+      days.push(day);
+    });
     
     return days;
   };
 
-  const handleRequestRegularization = async () => {
-    if (!selectedDay || !proposedTime || !reason.trim()) {
-      toast.error('Please fill all fields');
-      return;
-    }
-
-    setIsSubmitting(true);
-    try {
-      await attendanceApi.requestRegularization({
-        workDate: selectedDay.workDate!,
-        type: regularizationType,
-        proposedTime,
-        reason
-      });
-      
-      toast.success('Regularization request submitted successfully');
-      setShowRegularizationModal(false);
-      setProposedTime('');
-      setReason('');
-      setRegularizationType('check_in');
-    } catch (error) {
-      if (error instanceof ApiError) {
-        toast.error(`Failed to submit request: ${error.message}`);
-      }
-      console.error('Error submitting regularization:', error);
-    } finally {
-      setIsSubmitting(false);
-    }
-  };
-
-  const days = getDaysInMonth(currentMonth);
-  const monthName = currentMonth.toLocaleDateString('en-IN', { 
-    month: 'long', 
-    year: 'numeric',
-    timeZone: 'Asia/Kolkata'
-  });
+  const days = getDaysInMonthGrid();
+  const monthName = currentMonth.toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
 
   const previousMonth = () => {
     setCurrentMonth(new Date(currentMonth.getFullYear(), currentMonth.getMonth() - 1));
@@ -227,108 +209,129 @@ export function AttendanceCalendar({ user }: AttendanceCalendarProps) {
         return 'bg-purple-100 border-purple-300 text-purple-700 hover:bg-purple-200';
       case 'half-day':
         return 'bg-yellow-100 border-yellow-300 text-yellow-700 hover:bg-yellow-200';
+      case 'late':
+        return 'bg-orange-100 border-orange-300 text-orange-700 hover:bg-orange-200';
       default:
-        return 'bg-white border-gray-200 text-gray-400';
+        return 'bg-white border-gray-200 hover:bg-gray-50';
     }
+  };
+
+  const getStatusBadge = (status: DayData['status']) => {
+    const statusConfig = {
+      'present': { variant: 'default' as const, label: 'Present' },
+      'absent': { variant: 'destructive' as const, label: 'Absent' },
+      'leave': { variant: 'secondary' as const, label: 'Leave' },
+      'weekend': { variant: 'outline' as const, label: 'Weekend' },
+      'holiday': { variant: 'outline' as const, label: 'Holiday' },
+      'half-day': { variant: 'outline' as const, label: 'Half Day' },
+      'late': { variant: 'outline' as const, label: 'Late' }
+    };
+
+    const config = statusConfig[status as keyof typeof statusConfig] || { variant: 'outline', label: 'Not Recorded' };
+    
+    return (
+      <Badge variant={config.variant}>
+        {config.label}
+      </Badge>
+    );
   };
 
   const handleDayClick = (day: DayData) => {
-    console.log('Clicked date:', day.date, 'Work date:', day.workDate);
-    if (day.status && day.status !== 'weekend') {
-      setSelectedDay(day);
-      setShowDetails(true);
+    setSelectedDay(day);
+    setShowDetails(true);
+  };
+
+  const handleRegularization = () => {
+    if (!selectedDay) return;
+    
+    setRegularizationData({
+      date: selectedDay.date.toISOString().split('T')[0],
+      type: 'check-in',
+      reason: ''
+    });
+    setShowDetails(false);
+    setShowRegularization(true);
+  };
+
+  const submitRegularization = async () => {
+    if (!regularizationData.reason.trim()) {
+      toast.error('Please provide a reason for regularization');
+      return;
+    }
+
+    setIsLoading(true);
+    try {
+      if (useApi) {
+        await attendanceApi.requestRegularization(regularizationData);
+        toast.success('Regularization request submitted successfully');
+      } else {
+        // Mock success
+        toast.success('Regularization request submitted for approval');
+      }
+      setShowRegularization(false);
+      fetchCalendarData(); // Refresh data
+    } catch (error) {
+      if (error instanceof ApiError) {
+        toast.error(`Failed to submit request: ${error.message}`);
+      }
+    } finally {
+      setIsLoading(false);
     }
   };
 
-  // Calculate statistics from real data
   const stats = {
-    present: attendanceData.filter(d => d.status === 'present').length,
-    absent: attendanceData.filter(d => d.status === 'absent').length,
-    leaves: attendanceData.filter(d => d.status === 'leave').length,
-    totalHours: attendanceData
-      .filter(d => d.check_in_at && d.check_out_at)
-      .reduce((sum, d) => {
-        const checkIn = new Date(d.check_in_at!);
-        const checkOut = new Date(d.check_out_at!);
-        const diff = checkOut.getTime() - checkIn.getTime();
-        return sum + (diff / (1000 * 60 * 60));
-      }, 0),
-  };
-
-  const formatHours = (hours: number) => {
-    const wholeHours = Math.floor(hours);
-    const minutes = Math.round((hours - wholeHours) * 60);
-    return `${wholeHours}h ${minutes}m`;
-  };
-
-  // Format date for display in Indian format
-  const formatIndianDate = (dateString: string) => {
-    const date = new Date(dateString);
-    return date.toLocaleDateString('en-IN', {
-      year: 'numeric',
-      month: 'long',
-      day: 'numeric',
-      timeZone: 'Asia/Kolkata'
-    });
+    present: calendarData.filter(d => d.status === 'present').length,
+    absent: calendarData.filter(d => d.status === 'absent').length,
+    leaves: calendarData.filter(d => d.status === 'leave').length,
+    holidays: calendarData.filter(d => d.status === 'holiday').length,
+    late: calendarData.filter(d => d.status === 'late').length,
+    halfDays: calendarData.filter(d => d.status === 'half-day').length,
+    totalHours: calendarData.filter(d => d.hours).reduce((sum, d) => sum + (d.hours || 0), 0),
   };
 
   return (
     <div className="p-6 space-y-6">
       <div>
-         <h1 className="text-3xl font-bold tracking-tight">Attendance Calendar</h1>
+        <h1 className="text-3xl font-bold">Attendance Calendar</h1>
         <p className="text-gray-500">View your monthly attendance</p>
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-        <div className="border-l-4 border-green-500 bg-white rounded-r-lg p-4 shadow-sm hover:shadow-md transition-shadow">
-          <div className="flex items-center gap-3">
-            <div className="p-2 bg-green-100 rounded-lg">
-              <CheckCircle className="w-6 h-6 text-green-600" />
-            </div>
-            <div>
-              <p className="text-xs text-gray-500 uppercase tracking-wide">Days Present</p>
-              <p className="text-2xl font-bold text-gray-900">{stats.present}</p>
-            </div>
-          </div>
-        </div>
+        <Card>
+          <CardHeader className="pb-3">
+            <CardDescription>Days Present</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <p className="text-green-600 font-medium">{stats.present}</p>
+          </CardContent>
+        </Card>
 
-        <div className="border-l-4 border-red-500 bg-white rounded-r-lg p-4 shadow-sm hover:shadow-md transition-shadow">
-          <div className="flex items-center gap-3">
-            <div className="p-2 bg-red-100 rounded-lg">
-              <XCircle className="w-6 h-6 text-red-600" />
-            </div>
-            <div>
-              <p className="text-xs text-gray-500 uppercase tracking-wide">Days Absent</p>
-              <p className="text-2xl font-bold text-gray-900">{stats.absent}</p>
-            </div>
-          </div>
-        </div>
+        <Card>
+          <CardHeader className="pb-3">
+            <CardDescription>Days Absent</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <p className="text-red-600 font-medium">{stats.absent}</p>
+          </CardContent>
+        </Card>
 
-        <div className="border-l-4 border-blue-500 bg-white rounded-r-lg p-4 shadow-sm hover:shadow-md transition-shadow">
-          <div className="flex items-center gap-3">
-            <div className="p-2 bg-blue-100 rounded-lg">
-              <Calendar className="w-6 h-6 text-blue-600" />
-            </div>
-            <div>
-              <p className="text-xs text-gray-500 uppercase tracking-wide">Leaves Taken</p>
-              <p className="text-2xl font-bold text-gray-900">{stats.leaves}</p>
-            </div>
-          </div>
-        </div>
+        <Card>
+          <CardHeader className="pb-3">
+            <CardDescription>Leaves Taken</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <p className="text-blue-600 font-medium">{stats.leaves}</p>
+          </CardContent>
+        </Card>
 
-        <div className="border-l-4 border-purple-500 bg-white rounded-r-lg p-4 shadow-sm hover:shadow-md transition-shadow">
-          <div className="flex items-center gap-3">
-            <div className="p-2 bg-purple-100 rounded-lg">
-              <Clock className="w-6 h-6 text-purple-600" />
-            </div>
-            <div>
-              <p className="text-xs text-gray-500 uppercase tracking-wide">Total Hours</p>
-              <p className="text-2xl font-bold text-gray-900">
-                {stats.totalHours > 0 ? `${formatHours(stats.totalHours)}` : '0h 0m'}
-              </p>
-            </div>
-          </div>
-        </div>
+        <Card>
+          <CardHeader className="pb-3">
+            <CardDescription>Total Hours</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <p className="font-medium">{stats.totalHours.toFixed(1)} hrs</p>
+          </CardContent>
+        </Card>
       </div>
 
       <Card>
@@ -336,103 +339,94 @@ export function AttendanceCalendar({ user }: AttendanceCalendarProps) {
           <div className="flex items-center justify-between">
             <div>
               <CardTitle>{monthName}</CardTitle>
-              <CardDescription>
-                {loading ? 'Loading attendance data...' : 'Click on any day to view details'}
-              </CardDescription>
+              <CardDescription>Click on any day to view details</CardDescription>
             </div>
             <div className="flex gap-2">
-              <Button variant="outline" size="icon" onClick={previousMonth} disabled={loading}>
+              <Button variant="outline" size="icon" onClick={previousMonth}>
                 <ChevronLeft className="w-4 h-4" />
               </Button>
-              <Button variant="outline" size="icon" onClick={nextMonth} disabled={loading}>
+              <Button variant="outline" size="icon" onClick={nextMonth}>
                 <ChevronRight className="w-4 h-4" />
               </Button>
             </div>
           </div>
         </CardHeader>
         <CardContent>
-          {loading ? (
-            <div className="text-center py-8">
-              <p>Loading calendar data...</p>
-            </div>
-          ) : (
-            <>
-              <div className="grid grid-cols-7 gap-2">
-                {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map(day => (
-                  <div key={day} className="text-center p-2 text-sm text-gray-500">
-                    {day}
-                  </div>
-                ))}
-                
-                {days.map((day, index) => (
-                  <div key={index}>
-                    {day ? (
-                      <button
-                        onClick={() => handleDayClick(day)}
-                        className={`w-full aspect-square p-2 rounded-lg border-2 transition-all ${getStatusColor(day.status)} ${
-                          day.status && day.status !== 'weekend' ? 'cursor-pointer hover:scale-105' : 'cursor-default'
-                        }`}
-                        disabled={!day.status || day.status === 'weekend'}
-                      >
-                        <div className="flex flex-col items-center justify-center h-full">
-                          <span className={day.status ? '' : 'text-gray-400'}>{day.date}</span>
-                          {day.hours && <span className="text-xs mt-1">{formatHours(day.hours)}</span>}
-                          {day.status === 'half-day' && !day.hours && (
-                            <span className="text-xs mt-1">½</span>
-                          )}
-                        </div>
-                      </button>
-                    ) : (
-                      <div className="w-full aspect-square" />
-                    )}
-                  </div>
-                ))}
+          <div className="grid grid-cols-7 gap-2">
+            {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map(day => (
+              <div key={day} className="text-center p-2 text-sm text-gray-500 font-medium">
+                {day}
               </div>
+            ))}
+            
+            {days.map((day, index) => (
+              <div key={index}>
+                {day ? (
+                  <button
+                    onClick={() => handleDayClick(day)}
+                    className={`w-full aspect-square p-2 rounded-lg border-2 transition-all ${getStatusColor(day.status)} ${
+                      day.isToday ? 'ring-2 ring-blue-500 ring-offset-2' : ''
+                    }`}
+                  >
+                    <div className="flex flex-col items-center justify-center h-full">
+                      <span className={`font-medium ${day.isToday ? 'text-blue-600' : ''}`}>
+                        {day.date.getDate()}
+                      </span>
+                      {day.hours && <span className="text-xs mt-1">{day.hours}h</span>}
+                      {day.canRegularize && (
+                        <div className="w-2 h-2 bg-orange-500 rounded-full mt-1" title="Can regularize" />
+                      )}
+                    </div>
+                  </button>
+                ) : (
+                  <div className="w-full aspect-square" />
+                )}
+              </div>
+            ))}
+          </div>
 
-              <div className="mt-6 flex flex-wrap gap-4 text-sm">
-                <div className="flex items-center gap-2">
-                  <div className="w-4 h-4 rounded bg-green-100 border-2 border-green-300" />
-                  <span>Present</span>
-                </div>
-                <div className="flex items-center gap-2">
-                  <div className="w-4 h-4 rounded bg-red-100 border-2 border-red-300" />
-                  <span>Absent</span>
-                </div>
-                <div className="flex items-center gap-2">
-                  <div className="w-4 h-4 rounded bg-blue-100 border-2 border-blue-300" />
-                  <span>Leave</span>
-                </div>
-                <div className="flex items-center gap-2">
-                  <div className="w-4 h-4 rounded bg-gray-100 border-2 border-gray-300" />
-                  <span>Weekend</span>
-                </div>
-                <div className="flex items-center gap-2">
-                  <div className="w-4 h-4 rounded bg-purple-100 border-2 border-purple-300" />
-                  <span>Holiday</span>
-                </div>
-                <div className="flex items-center gap-2">
-                  <div className="w-4 h-4 rounded bg-yellow-100 border-2 border-yellow-300" />
-                  <span>Half Day</span>
-                </div>
-                <div className="flex items-center gap-2">
-                  <div className="w-4 h-4 rounded bg-white border-2 border-gray-200" />
-                  <span>Future Date</span>
-                </div>
-              </div>
-            </>
-          )}
+          <div className="mt-6 flex flex-wrap gap-4 text-sm">
+            <div className="flex items-center gap-2">
+              <div className="w-4 h-4 rounded bg-green-100 border-2 border-green-300" />
+              <span>Present</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <div className="w-4 h-4 rounded bg-red-100 border-2 border-red-300" />
+              <span>Absent</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <div className="w-4 h-4 rounded bg-blue-100 border-2 border-blue-300" />
+              <span>Leave</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <div className="w-4 h-4 rounded bg-gray-100 border-2 border-gray-300" />
+              <span>Weekend</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <div className="w-4 h-4 rounded bg-purple-100 border-2 border-purple-300" />
+              <span>Holiday</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <div className="w-4 h-4 rounded bg-yellow-100 border-2 border-yellow-300" />
+              <span>Half Day</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <div className="w-4 h-4 rounded bg-orange-100 border-2 border-orange-300" />
+              <span>Late</span>
+            </div>
+          </div>
         </CardContent>
       </Card>
 
-      {/* Day Details Modal */}
+      {/* Day Details Dialog */}
       <Dialog open={showDetails} onOpenChange={setShowDetails}>
         <DialogContent>
           <DialogHeader>
             <DialogTitle>
-              Attendance Details - {currentMonth.toLocaleDateString('en-IN', { 
-                month: 'long',
-                timeZone: 'Asia/Kolkata'
-              })} {selectedDay?.date}
+              <div className="flex items-center gap-2">
+                <Calendar className="w-5 h-5" />
+                Attendance Details - {selectedDay?.date.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })}
+              </div>
             </DialogTitle>
             <DialogDescription>
               View your attendance information for this day
@@ -443,38 +437,22 @@ export function AttendanceCalendar({ user }: AttendanceCalendarProps) {
             <div className="space-y-4">
               <div className="flex justify-between items-center">
                 <span className="text-gray-500">Status</span>
-                <Badge 
-                  variant={
-                    selectedDay.status === 'present' ? 'default' :
-                    selectedDay.status === 'absent' ? 'destructive' :
-                    selectedDay.status === 'leave' ? 'secondary' :
-                    'outline'
-                  }
-                >
-                  {selectedDay.status ? selectedDay.status.charAt(0).toUpperCase() + selectedDay.status.slice(1) : 'No Record'}
-                </Badge>
+                {getStatusBadge(selectedDay.status)}
               </div>
               
               <div className="flex justify-between items-center">
                 <span className="text-gray-500">Check In Time</span>
-                <span>{selectedDay.checkIn || '--'}</span>
+                <span className="font-medium">{selectedDay.checkIn || '--'}</span>
               </div>
               
               <div className="flex justify-between items-center">
                 <span className="text-gray-500">Check Out Time</span>
-                <span>{selectedDay.checkOut || '--'}</span>
+                <span className="font-medium">{selectedDay.checkOut || '--'}</span>
               </div>
               
               <div className="flex justify-between items-center">
                 <span className="text-gray-500">Total Hours</span>
-                <span>{selectedDay.hours ? `${formatHours(selectedDay.hours)}` : '--'}</span>
-              </div>
-              
-              {/* Debug information */}
-              <div className="text-xs text-gray-400 border-t pt-2">
-                <div>Date: {selectedDay.date}</div>
-                <div>Work Date: {selectedDay.workDate}</div>
-                <div>Formatted: {selectedDay.workDate ? formatIndianDate(selectedDay.workDate) : 'N/A'}</div>
+                <span className="font-medium">{selectedDay.hours ? `${selectedDay.hours} hours` : '--'}</span>
               </div>
               
               {selectedDay.notes && (
@@ -484,73 +462,93 @@ export function AttendanceCalendar({ user }: AttendanceCalendarProps) {
                 </div>
               )}
               
-              <Button 
-                variant="outline" 
-                className="w-full"
-                onClick={() => {
-                  console.log('Opening regularization for:', selectedDay.date, selectedDay.workDate);
-                  setShowDetails(false);
-                  setShowRegularizationModal(true);
-                }}
-              >
-                Request Regularization
-              </Button>
+              {selectedDay.canRegularize && (
+                <Button onClick={handleRegularization} className="w-full gap-2">
+                  <Clock className="w-4 h-4" />
+                  Request Regularization
+                </Button>
+              )}
             </div>
           )}
         </DialogContent>
       </Dialog>
 
-      {/* Regularization Request Modal */}
-      <Dialog open={showRegularizationModal} onOpenChange={setShowRegularizationModal}>
+      {/* Regularization Dialog */}
+      <Dialog open={showRegularization} onOpenChange={setShowRegularization}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Request Attendance Regularization</DialogTitle>
+            <DialogTitle>
+              <div className="flex items-center gap-2">
+                <Clock className="w-5 h-5" />
+                Request Attendance Regularization
+              </div>
+            </DialogTitle>
             <DialogDescription>
-              Request correction for {selectedDay?.workDate ? formatIndianDate(selectedDay.workDate) : 'selected date'}
+              Submit a request to correct your attendance for {regularizationData.date}
             </DialogDescription>
           </DialogHeader>
           
           <div className="space-y-4">
             <div>
-              <Label htmlFor="type">Correction Type</Label>
-              <Select value={regularizationType} onValueChange={(value: 'check_in' | 'check_out') => setRegularizationType(value)}>
+              <label className="text-sm font-medium">Regularization Type</label>
+              <Select 
+                value={regularizationData.type} 
+                onValueChange={(value: 'check-in' | 'check-out' | 'both') => 
+                  setRegularizationData({...regularizationData, type: value})
+                }
+              >
                 <SelectTrigger>
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="check_in">Check-in Time</SelectItem>
-                  <SelectItem value="check_out">Check-out Time</SelectItem>
+                  <SelectItem value="check-in">Check-in Correction</SelectItem>
+                  <SelectItem value="check-out">Check-out Correction</SelectItem>
+                  <SelectItem value="both">Both Check-in & Check-out</SelectItem>
                 </SelectContent>
               </Select>
             </div>
 
-            <div>
-              <Label htmlFor="time">Proposed Time</Label>
-              <Input
-                type="time"
-                value={proposedTime}
-                onChange={(e) => setProposedTime(e.target.value)}
-                required
-              />
-            </div>
+            {(regularizationData.type === 'check-in' || regularizationData.type === 'both') && (
+              <div>
+                <label className="text-sm font-medium">Proposed Check-in Time</label>
+                <input
+                  type="time"
+                  className="w-full p-2 border rounded-md"
+                  value={regularizationData.proposedCheckIn}
+                  onChange={(e) => setRegularizationData({...regularizationData, proposedCheckIn: e.target.value})}
+                />
+              </div>
+            )}
+
+            {(regularizationData.type === 'check-out' || regularizationData.type === 'both') && (
+              <div>
+                <label className="text-sm font-medium">Proposed Check-out Time</label>
+                <input
+                  type="time"
+                  className="w-full p-2 border rounded-md"
+                  value={regularizationData.proposedCheckOut}
+                  onChange={(e) => setRegularizationData({...regularizationData, proposedCheckOut: e.target.value})}
+                />
+              </div>
+            )}
 
             <div>
-              <Label htmlFor="reason">Reason</Label>
+              <label className="text-sm font-medium">Reason for Regularization</label>
               <Textarea
-                placeholder="Explain why you need this correction..."
-                value={reason}
-                onChange={(e) => setReason(e.target.value)}
+                placeholder="Please explain why you need to regularize this attendance..."
+                value={regularizationData.reason}
+                onChange={(e) => setRegularizationData({...regularizationData, reason: e.target.value})}
                 rows={4}
               />
             </div>
           </div>
 
           <DialogFooter>
-            <Button variant="outline" onClick={() => setShowRegularizationModal(false)}>
+            <Button variant="outline" onClick={() => setShowRegularization(false)}>
               Cancel
             </Button>
-            <Button onClick={handleRequestRegularization} disabled={isSubmitting}>
-              {isSubmitting ? 'Submitting...' : 'Submit Request'}
+            <Button onClick={submitRegularization} disabled={isLoading}>
+              {isLoading ? 'Submitting...' : 'Submit Request'}
             </Button>
           </DialogFooter>
         </DialogContent>

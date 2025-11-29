@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Plus, Trash2 } from 'lucide-react';
+import { Plus, Trash2, Building2, Palette, MapPin, Calendar, Globe, Clock } from 'lucide-react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../ui/card';
 import { Button } from '../ui/button';
 import { Input } from '../ui/input';
@@ -10,6 +10,8 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '../ui/tabs';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '../ui/dialog';
 import { toast } from 'sonner@2.0.3';
 import { User } from '../../App';
+import { BrandingSettings } from './BrandingSettings';
+import { useCompany } from '../../contexts/CompanyContext';
 
 interface CompanySettingsProps {
   user: User;
@@ -53,17 +55,36 @@ export function CompanySettings({ user }: CompanySettingsProps) {
   return (
     <div className="p-6 space-y-6">
       <div>
-         <h1 className="text-3xl font-bold tracking-tight">Company Settings</h1>
+        <h1>Company Settings</h1>
         <p className="text-gray-500">Configure company-wide settings and policies</p>
       </div>
 
       <Tabs defaultValue="company" className="space-y-4">
         <TabsList>
-          <TabsTrigger value="company">Company Profile</TabsTrigger>
-          <TabsTrigger value="locations">Locations</TabsTrigger>
-          <TabsTrigger value="attendance">Attendance Rules</TabsTrigger>
-          <TabsTrigger value="timesheet">Timesheet Settings</TabsTrigger>
-          <TabsTrigger value="holidays">Holidays</TabsTrigger>
+          <TabsTrigger value="company">
+            <Building2 className="h-4 w-4 mr-2" />
+            Company Profile
+          </TabsTrigger>
+          <TabsTrigger value="branding">
+            <Palette className="h-4 w-4 mr-2" />
+            Branding & Theme
+          </TabsTrigger>
+          <TabsTrigger value="locations">
+            <MapPin className="h-4 w-4 mr-2" />
+            Locations
+          </TabsTrigger>
+          <TabsTrigger value="attendance">
+            <Clock className="h-4 w-4 mr-2" />
+            Attendance Rules
+          </TabsTrigger>
+          <TabsTrigger value="timesheet">
+            <Calendar className="h-4 w-4 mr-2" />
+            Timesheet Settings
+          </TabsTrigger>
+          <TabsTrigger value="holidays">
+            <Globe className="h-4 w-4 mr-2" />
+            Holidays
+          </TabsTrigger>
         </TabsList>
 
         <TabsContent value="company">
@@ -127,6 +148,10 @@ export function CompanySettings({ user }: CompanySettingsProps) {
               <Button onClick={handleSave}>Save Changes</Button>
             </CardContent>
           </Card>
+        </TabsContent>
+
+        <TabsContent value="branding">
+          <BrandingSettings user={user} />
         </TabsContent>
 
         <TabsContent value="locations">
