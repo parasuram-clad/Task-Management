@@ -25,7 +25,7 @@ import './services/api-test-helper';
 import { AddEmployee } from './components/employees/AddEmployee';
 import { EditEmployee } from './components/employees/EditEmployee';
 import { ProjectGrid } from './components/tasks/ProjectGrid';
-import { Profile } from './components/Profile/Profile';
+// import { Profile } from './components/Profile/Profile';
 import { authApi } from './services/api';
 export type UserRole = 'employee' | 'manager' | 'hr' | 'admin' | 'finance';
 
@@ -155,7 +155,7 @@ const handleLogin = async (userData: any) => {
                   : <EmployeeDashboard user={currentUser} />
               } 
             />
-            <Route path="/profile" element={<Profile user={currentUser} />} />
+            {/* <Route path="/profile" element={<Profile user={currentUser} />} /> */}
 
             {/* Attendance Routes */}
             <Route path="/attendance/my-attendance" element={<MyAttendance user={currentUser!} />} />
